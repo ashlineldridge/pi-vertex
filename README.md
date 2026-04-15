@@ -126,10 +126,6 @@ Pricing follows Google Cloud Vertex AI rates. See [Vertex AI Pricing](https://cl
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
-## License
-
-MIT - see [LICENSE](LICENSE) for details.
-
 ## Acknowledgments
 
-Inspired by [pi-vertex-claude](https://github.com/isaacraja/pi-vertex-claude) and [gptel-vertex](https://github.com/ashlineldridge/gptel-vertex).
+Inspired by [pi-vertex-claude](https://github.com/isaacraja/pi-vertex-claude).

@@ -20,7 +20,7 @@
   "bugs": {
     "url": "https://github.com/ashlineldridge/pi-vertex/issues"
   },
-  "author": "Ashlin Eldridge",
+  "author": "",
   "license": "MIT",
   "type": "module",
   "main": "index.ts",
