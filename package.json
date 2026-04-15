@@ -1,0 +1,56 @@
+{
+  "name": "@ashlineldridge/pi-vertex",
+  "version": "0.1.0",
+  "description": "Google Cloud Vertex AI provider for Pi coding agent - Claude, Gemini, and more",
+  "keywords": [
+    "pi-package",
+    "vertex-ai",
+    "claude",
+    "anthropic",
+    "gemini",
+    "google-cloud",
+    "ai",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ashlineldridge/pi-vertex.git"
+  },
+  "homepage": "https://github.com/ashlineldridge/pi-vertex#readme",
+  "bugs": {
+    "url": "https://github.com/ashlineldridge/pi-vertex/issues"
+  },
+  "author": "Ashlin Eldridge",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/vertex-sdk": "^0.11.4",
+    "partial-json": "^0.1.7"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
