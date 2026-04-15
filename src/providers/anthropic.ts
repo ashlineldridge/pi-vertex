@@ -246,7 +246,7 @@ export function streamVertexAnthropic(
     try {
       const vertexModel = model as AnthropicVertexModel;
       const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
-      const location = process.env.GOOGLE_CLOUD_LOCATION || "us-east5";
+      const location = process.env.GOOGLE_CLOUD_LOCATION || process.env.CLOUD_ML_REGION || process.env.VERTEX_REGION;
 
       if (!projectId) {
         throw new Error("Google Cloud project ID not set");

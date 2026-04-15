@@ -7,7 +7,7 @@
  *   1. Authenticate: gcloud auth application-default login
  *   2. Set environment variables:
  *      - GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT: Your GCP project ID
- *      - GOOGLE_CLOUD_LOCATION: Region (defaults to us-east5)
+ *      - GOOGLE_CLOUD_LOCATION: Region (required)
  *      - VERTEX_ANTHROPIC_1M: Set to "true" to enable 1M context (optional)
  * 
  * Usage:
@@ -50,21 +50,23 @@ function getProjectId(): string | undefined {
 }
 
 // Get location from environment
-function getLocation(): string {
+function getLocation(): string | undefined {
   return process.env.GOOGLE_CLOUD_LOCATION || 
          process.env.CLOUD_ML_REGION || 
-         process.env.VERTEX_REGION || 
-         "us-east5";
+         process.env.VERTEX_REGION;
 }
 
 export default function (pi: ExtensionAPI) {
   const projectId = getProjectId();
-  if (!projectId || !hasAdcCredentials()) {
-    console.warn("Vertex AI: Missing project ID or credentials. Run 'gcloud auth application-default login'");
+  const location = getLocation();
+  
+  if (!projectId || !location || !hasAdcCredentials()) {
+    console.warn("Vertex AI: Missing configuration. Required:");
+    console.warn("  - GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT");
+    console.warn("  - GOOGLE_CLOUD_LOCATION");
+    console.warn("  - Run 'gcloud auth application-default login'");
     return;
   }
-
-  const location = getLocation();
   
   // Register Anthropic models via Vertex AI
   pi.registerProvider("vertex-anthropic", {
