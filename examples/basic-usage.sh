@@ -4,7 +4,7 @@
 
 # Set required environment variables
 export GOOGLE_CLOUD_PROJECT=your-project-id
-export GOOGLE_CLOUD_LOCATION=us-east5
+export GOOGLE_CLOUD_LOCATION=your-region
 
 # Enable 1M context (optional)
 export VERTEX_ANTHROPIC_1M=true

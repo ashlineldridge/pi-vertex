@@ -29,9 +29,7 @@ gcloud auth application-default login
 ```bash
 # Required
 export GOOGLE_CLOUD_PROJECT=your-project-id
-
-# Optional (defaults to us-east5)
-export GOOGLE_CLOUD_LOCATION=us-east5
+export GOOGLE_CLOUD_LOCATION=your-region
 
 # Enable 1M context for Claude models (optional)
 export VERTEX_ANTHROPIC_1M=true
@@ -69,6 +67,18 @@ pi --provider vertex-anthropic --model claude-opus-4-6-1m
 pi --provider vertex-anthropic --model claude-sonnet-4-6-1m
 ```
 
+### Thinking Levels
+
+Thinking levels are set independently from model selection:
+
+```bash
+# Set default thinking level
+pi --thinking high
+
+# Or use /thinking command during chat
+/thinking xhigh
+```
+
 ### Shell Configuration
 
 Add to your shell config (~/.bashrc, ~/.zshrc, etc.):
@@ -76,7 +86,7 @@ Add to your shell config (~/.bashrc, ~/.zshrc, etc.):
 ```bash
 # Vertex AI configuration
 export GOOGLE_CLOUD_PROJECT=your-project-id
-export GOOGLE_CLOUD_LOCATION=us-east5
+export GOOGLE_CLOUD_LOCATION=your-region  # e.g., us-east5, europe-west4
 export VERTEX_ANTHROPIC_1M=true  # Optional: Enable 1M context
 ```
 
@@ -97,11 +107,6 @@ export VERTEX_ANTHROPIC_1M=true  # Optional: Enable 1M context
 **Note**: 1M context models require `VERTEX_ANTHROPIC_1M=true` and are suffixed with `-1m`.
 
 ## Regional Availability
-
-Common regions for Vertex AI:
-- **US**: `us-east5`, `us-central1`, `us-west1`
-- **Europe**: `europe-west4`, `europe-west1`
-- **Asia Pacific**: `asia-northeast1`, `asia-southeast1`
 
 Check the [Vertex AI documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-anthropic) for model availability in your region.
 
