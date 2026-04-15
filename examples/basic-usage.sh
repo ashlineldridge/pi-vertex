@@ -10,7 +10,7 @@ export GOOGLE_CLOUD_LOCATION=your-region
 pi --provider vertex-anthropic --model claude-opus-4-6 "Explain the concept of recursion"
 
 # Usage with 1M context window
-pi --provider vertex-anthropic --model claude-opus-4-6-1m "Analyze this large codebase"
+pi --provider vertex-anthropic --model claude-opus-4-6[1m] "Analyze this large codebase"
 
 # With maximum thinking effort
-pi --provider vertex-anthropic --model claude-opus-4-6-1m --thinking xhigh "Solve this complex algorithm problem"
+pi --provider vertex-anthropic --model claude-opus-4-6[1m] --thinking xhigh "Solve this complex algorithm problem"

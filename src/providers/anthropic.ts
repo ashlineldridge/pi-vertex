@@ -37,7 +37,7 @@ const CLAUDE_MODELS: AnthropicVertexModel[] = [
     maxTokens: 128000,
   },
   {
-    id: "claude-opus-4-6-1m",
+    id: "claude-opus-4-6[1m]",
     name: "Claude Opus 4.6 [1M]",
     reasoning: true,
     input: ["text", "image"],
@@ -59,7 +59,7 @@ const CLAUDE_MODELS: AnthropicVertexModel[] = [
     maxTokens: 64000,
   },
   {
-    id: "claude-sonnet-4-6-1m",
+    id: "claude-sonnet-4-6[1m]",
     name: "Claude Sonnet 4.6 [1M]",
     reasoning: true,
     input: ["text", "image"],
@@ -227,11 +227,21 @@ export function streamVertexAnthropic(
         throw new Error("Google Cloud project ID not set");
       }
 
-      const client = new AnthropicVertex({
+      // Create client with beta headers if needed
+      const clientOptions: any = {
         region: location,
         projectId: projectId,
         // The SDK handles authentication via ADC
-      });
+      };
+      
+      // Add beta headers for 1M context models
+      if (vertexModel.anthropicBeta && vertexModel.anthropicBeta.length > 0) {
+        clientOptions.defaultHeaders = {
+          "anthropic-beta": vertexModel.anthropicBeta.join(","),
+        };
+      }
+      
+      const client = new AnthropicVertex(clientOptions);
 
       const { system, messages } = convertMessages(context.messages);
 
@@ -268,12 +278,7 @@ export function streamVertexAnthropic(
         params.stop_sequences = options.stopSequences;
       }
 
-      // Add beta headers if specified
-      if (vertexModel.anthropicBeta && vertexModel.anthropicBeta.length > 0) {
-        (params as any).headers = {
-          "anthropic-beta": vertexModel.anthropicBeta.join(","),
-        };
-      }
+      // Beta headers are added to the client, not the params
 
       const messageStream = await client.messages.create(params);
       

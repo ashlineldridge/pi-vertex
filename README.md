@@ -55,10 +55,10 @@ pi --provider vertex-anthropic --model claude-haiku-4-5
 
 ```bash
 # Use Claude Opus 4.6 with 1M context
-pi --provider vertex-anthropic --model claude-opus-4-6-1m
+pi --provider vertex-anthropic --model claude-opus-4-6[1m]
 
 # Use Claude Sonnet 4.6 with 1M context
-pi --provider vertex-anthropic --model claude-sonnet-4-6-1m
+pi --provider vertex-anthropic --model claude-sonnet-4-6[1m]
 ```
 
 ### Thinking Levels
@@ -90,12 +90,12 @@ export GOOGLE_CLOUD_LOCATION=your-region  # e.g., us-east5, europe-west4
 | Model ID | Name | Context | Max Output | Reasoning |
 |----------|------|---------|------------|-----------|
 | `claude-opus-4-6` | Claude Opus 4.6 | 200K | 128K | ✓ |
-| `claude-opus-4-6-1m` | Claude Opus 4.6 [1M] | 1M | 128K | ✓ |
+| `claude-opus-4-6[1m]` | Claude Opus 4.6 [1M] | 1M | 128K | ✓ |
 | `claude-sonnet-4-6` | Claude Sonnet 4.6 | 200K | 64K | ✓ |
-| `claude-sonnet-4-6-1m` | Claude Sonnet 4.6 [1M] | 1M | 64K | ✓ |
+| `claude-sonnet-4-6[1m]` | Claude Sonnet 4.6 [1M] | 1M | 64K | ✓ |
 | `claude-haiku-4-5` | Claude Haiku 4.5 | 200K | 64K | ✓ |
 
-**Note**: 1M context models are suffixed with `-1m` and use the `context-1m-2025-08-07` beta header automatically.
+**Note**: 1M context models use the `[1m]` suffix (matching Claude Code format) and automatically include the required `context-1m-2025-08-07` beta header.
 
 ## Regional Availability
 
