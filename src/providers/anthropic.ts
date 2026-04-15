@@ -19,10 +19,7 @@ import {
 } from "@mariozechner/pi-ai";
 import { parse as partialParse } from "partial-json";
 
-export interface AnthropicVertexModel extends Model<"vertex-anthropic"> {
-  vertexModelId?: string; // Actual model ID to send to Vertex (without suffixes)
-  anthropicBeta?: string[]; // Beta headers to include
-}
+export type AnthropicVertexModel = Model<"vertex-anthropic">;
 
 // Latest Claude models with accurate pricing and limits
 const CLAUDE_MODELS: AnthropicVertexModel[] = [
@@ -44,8 +41,6 @@ const CLAUDE_MODELS: AnthropicVertexModel[] = [
     cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
     contextWindow: 1000000,
     maxTokens: 128000,
-    vertexModelId: "claude-opus-4-6",
-    anthropicBeta: ["context-1m-2025-08-07"],
   },
   
   // Sonnet models
@@ -66,8 +61,6 @@ const CLAUDE_MODELS: AnthropicVertexModel[] = [
     cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
     contextWindow: 1000000,
     maxTokens: 64000,
-    vertexModelId: "claude-sonnet-4-6",
-    anthropicBeta: ["context-1m-2025-08-07"],
   },
   
   // Haiku models
@@ -235,9 +228,9 @@ export function streamVertexAnthropic(
       };
       
       // Add beta headers for 1M context models
-      if (vertexModel.anthropicBeta && vertexModel.anthropicBeta.length > 0) {
+      if (model.id.endsWith('[1m]')) {
         clientOptions.defaultHeaders = {
-          "anthropic-beta": vertexModel.anthropicBeta.join(","),
+          "anthropic-beta": "context-1m-2025-08-07",
         };
       }
       
@@ -246,7 +239,10 @@ export function streamVertexAnthropic(
       const { system, messages } = convertMessages(context.messages);
 
       // Build request parameters
-      const modelId = vertexModel.vertexModelId || model.id;
+      // Strip [1m] suffix for Vertex API
+      const modelId = model.id.replace('[1m]', '');
+      const is1MModel = model.id.endsWith('[1m]');
+      
       const params: MessageCreateParamsStreaming = {
         model: modelId,
         messages,
