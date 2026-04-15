@@ -30,9 +30,6 @@ gcloud auth application-default login
 # Required
 export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=your-region
-
-# Enable 1M context for Claude models (optional)
-export VERTEX_ANTHROPIC_1M=true
 ```
 
 ### 3. Enable Models in Vertex AI Model Garden
@@ -57,9 +54,6 @@ pi --provider vertex-anthropic --model claude-haiku-4-5
 ### With 1M Context Window
 
 ```bash
-# Enable 1M context models
-export VERTEX_ANTHROPIC_1M=true
-
 # Use Claude Opus 4.6 with 1M context
 pi --provider vertex-anthropic --model claude-opus-4-6-1m
 
@@ -87,7 +81,6 @@ Add to your shell config (~/.bashrc, ~/.zshrc, etc.):
 # Vertex AI configuration
 export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=your-region  # e.g., us-east5, europe-west4
-export VERTEX_ANTHROPIC_1M=true  # Optional: Enable 1M context
 ```
 
 ## Available Models
@@ -102,7 +95,7 @@ export VERTEX_ANTHROPIC_1M=true  # Optional: Enable 1M context
 | `claude-sonnet-4-6-1m` | Claude Sonnet 4.6 [1M] | 1M | 64K | ✓ |
 | `claude-haiku-4-5` | Claude Haiku 4.5 | 200K | 64K | ✓ |
 
-**Note**: 1M context models require `VERTEX_ANTHROPIC_1M=true` and are suffixed with `-1m`.
+**Note**: 1M context models are suffixed with `-1m` and use the `context-1m-2025-08-07` beta header automatically.
 
 ## Regional Availability
 

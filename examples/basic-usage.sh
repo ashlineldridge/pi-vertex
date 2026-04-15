@@ -6,9 +6,6 @@
 export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_LOCATION=your-region
 
-# Enable 1M context (optional)
-export VERTEX_ANTHROPIC_1M=true
-
 # Basic usage with standard context
 pi --provider vertex-anthropic --model claude-opus-4-6 "Explain the concept of recursion"
 

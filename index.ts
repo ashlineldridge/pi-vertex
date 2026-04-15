@@ -8,11 +8,10 @@
  *   2. Set environment variables:
  *      - GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT: Your GCP project ID
  *      - GOOGLE_CLOUD_LOCATION: Region (required)
- *      - VERTEX_ANTHROPIC_1M: Set to "true" to enable 1M context (optional)
  * 
  * Usage:
  *   pi --provider vertex-anthropic --model claude-opus-4-6
- *   pi --provider vertex-anthropic --model claude-opus-4-6-1m  (with VERTEX_ANTHROPIC_1M=true)
+ *   pi --provider vertex-anthropic --model claude-opus-4-6-1m
  */
 
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
@@ -73,7 +72,7 @@ export default function (pi: ExtensionAPI) {
     baseUrl: `https://${location}-aiplatform.googleapis.com`,
     apiKey: "GOOGLE_CLOUD_PROJECT", // For detection
     api: "vertex-anthropic" as Api,
-    models: anthropicModels(location, process.env.VERTEX_ANTHROPIC_1M === "true"),
+    models: anthropicModels(location),
     streamSimple: streamVertexAnthropic
   });
 

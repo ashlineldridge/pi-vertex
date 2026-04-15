@@ -82,19 +82,12 @@ const CLAUDE_MODELS: AnthropicVertexModel[] = [
   },
 ];
 
-export function anthropicModels(location: string, enable1M: boolean): AnthropicVertexModel[] {
-  const models = CLAUDE_MODELS.map(model => ({
+export function anthropicModels(location: string): AnthropicVertexModel[] {
+  return CLAUDE_MODELS.map(model => ({
     ...model,
     provider: "vertex-anthropic" as const,
     api: "vertex-anthropic" as const,
   }));
-  
-  // Filter models based on whether 1M context is enabled
-  if (!enable1M) {
-    return models.filter(m => !m.id.endsWith("-1m"));
-  }
-  
-  return models;
 }
 
 // Convert pi messages to Anthropic format
