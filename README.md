@@ -51,7 +51,7 @@ pi --provider vertex-anthropic --model claude-opus-4-6
 pi --provider vertex-anthropic --model claude-sonnet-4-6
 
 # Use Claude Haiku 4.5
-pi --provider vertex-anthropic --model claude-haiku-4-5@20251001
+pi --provider vertex-anthropic --model claude-haiku-4-5
 ```
 
 ### With 1M Context Window
@@ -100,9 +100,7 @@ export VERTEX_ANTHROPIC_1M=true  # Optional: Enable 1M context
 | `claude-opus-4-6-1m` | Claude Opus 4.6 [1M] | 1M | 128K | ✓ |
 | `claude-sonnet-4-6` | Claude Sonnet 4.6 | 200K | 64K | ✓ |
 | `claude-sonnet-4-6-1m` | Claude Sonnet 4.6 [1M] | 1M | 64K | ✓ |
-| `claude-sonnet-4@20250514` | Claude Sonnet 4 | 200K | 64K | ✓ |
-| `claude-haiku-4-5@20251001` | Claude Haiku 4.5 | 200K | 64K | ✓ |
-| `claude-3-5-haiku@20241022` | Claude 3.5 Haiku | 200K | 8K | ✗ |
+| `claude-haiku-4-5` | Claude Haiku 4.5 | 200K | 64K | ✓ |
 
 **Note**: 1M context models require `VERTEX_ANTHROPIC_1M=true` and are suffixed with `-1m`.
 

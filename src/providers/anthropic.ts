@@ -69,34 +69,16 @@ const CLAUDE_MODELS: AnthropicVertexModel[] = [
     vertexModelId: "claude-sonnet-4-6",
     anthropicBeta: ["context-1m-2025-08-07"],
   },
-  {
-    id: "claude-sonnet-4@20250514",
-    name: "Claude Sonnet 4",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-    contextWindow: 200000,
-    maxTokens: 64000,
-  },
   
   // Haiku models
   {
-    id: "claude-haiku-4-5@20251001",
+    id: "claude-haiku-4-5",
     name: "Claude Haiku 4.5",
     reasoning: true,
     input: ["text", "image"],
     cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
     contextWindow: 200000,
     maxTokens: 64000,
-  },
-  {
-    id: "claude-3-5-haiku@20241022",
-    name: "Claude 3.5 Haiku",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
-    contextWindow: 200000,
-    maxTokens: 8192,
   },
 ];
 
