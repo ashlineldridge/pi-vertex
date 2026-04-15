@@ -1,0 +1,28 @@
+# Test files
+test/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+coverage/
+
+# Development files
+.gitignore
+.git/
+tsconfig.json
+examples/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Keep source files
+!src/
+!index.ts
+!LICENSE
+!README.md
