@@ -1,6 +1,6 @@
 # Pi Vertex AI Provider
 
-Access Anthropic Claude models through Google Cloud Vertex AI in the Pi coding agent.
+Access Anthropic Claude models through Google Cloud Vertex AI in the Pi coding agent. Support for Gemini and other Vertex AI models coming soon.
 
 ## Features
 
@@ -118,13 +118,14 @@ Check the [Vertex AI documentation](https://cloud.google.com/vertex-ai/generativ
 
 Pricing follows Google Cloud Vertex AI rates. See [Vertex AI Pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing) for current rates.
 
-## Future Roadmap
+## Coming Soon
 
-- [ ] Add Gemini model support (separate `vertex-gemini` provider)
-- [ ] Add other Vertex AI partner models as they become available
-- [ ] Add usage tracking and cost estimation
+- 🚀 **Gemini models** - Native Vertex AI Gemini support (`vertex-gemini` provider)
+- 🤖 **OpenAI models** - When available on Vertex AI
+- 📊 **Additional partner models** - As they become available on Vertex AI
+- 📈 **Usage tracking** - Cost estimation and token usage
 
-**Note**: This extension currently only supports Anthropic Claude models. Other models will be added in future releases.
+**Current Release**: Anthropic Claude models only. Multi-model support coming in next major release.
 
 ## Contributing
 

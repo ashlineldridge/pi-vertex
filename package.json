@@ -1,7 +1,7 @@
 {
   "name": "@ashlineldridge/pi-vertex",
   "version": "0.1.0",
-  "description": "Anthropic Claude models via Google Cloud Vertex AI for Pi coding agent",
+  "description": "Google Cloud Vertex AI provider for Pi coding agent - Claude models now, Gemini and more coming soon",
   "keywords": [
     "pi-package",
     "vertex-ai",
