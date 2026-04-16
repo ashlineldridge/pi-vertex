@@ -1,19 +1,32 @@
 # Pi Vertex AI Provider
 
-Access Google Cloud Vertex AI models (Claude, Gemini, and more) through the Pi coding agent.
+Access Anthropic Claude models through Google Cloud Vertex AI in the Pi coding agent.
 
 ## Features
 
-- 🚀 Support for latest Claude models via Vertex AI
-- 💡 1M context window support for Claude Opus & Sonnet 4.6
+- 🚀 All latest Claude models via Vertex AI (Opus, Sonnet, Haiku)
+- 💡 1M context window support with `[1m]` suffix
 - 🔧 Easy authentication via Google Cloud SDK
-- 📦 Clean, extensible architecture for adding more Vertex AI models
 - 🎯 Full support for reasoning, tools, and streaming
+- 📦 Matches Claude Code's model naming conventions
 
 ## Installation
 
 ```bash
-pi install github:ashlineldridge/pi-vertex
+# Install from GitHub
+pi install https://github.com/ashlineldridge/pi-vertex
+
+# Or if published to npm (not yet published)
+pi install npm:@ashlineldridge/pi-vertex
+```
+
+### Replacing Other Vertex Extensions
+
+If you have other vertex extensions installed (like `pi-vertex-claude`), remove them first:
+
+```bash
+pi remove https://github.com/isaacraja/pi-vertex-claude
+pi remove https://github.com/myk-org/pi-vertex-claude
 ```
 
 ## Setup
@@ -105,18 +118,15 @@ Check the [Vertex AI documentation](https://cloud.google.com/vertex-ai/generativ
 
 Pricing follows Google Cloud Vertex AI rates. See [Vertex AI Pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing) for current rates.
 
-## Roadmap
+## Future Roadmap
 
-- [ ] Add Gemini model support (`vertex-gemini` provider)
-- [ ] Add OpenAI model support when available on Vertex AI
-- [ ] Add Mistral model support
-- [ ] Add model-specific configuration options
+- [ ] Add Gemini model support (separate `vertex-gemini` provider)
+- [ ] Add other Vertex AI partner models as they become available
 - [ ] Add usage tracking and cost estimation
+
+**Note**: This extension currently only supports Anthropic Claude models. Other models will be added in future releases.
 
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
-## Acknowledgments
-
-Inspired by [pi-vertex-claude](https://github.com/isaacraja/pi-vertex-claude).

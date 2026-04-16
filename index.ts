@@ -1,7 +1,7 @@
 /**
  * Google Cloud Vertex AI Provider for Pi
  * 
- * Supports Claude (Anthropic), Gemini, and other Vertex AI models.
+ * Currently supports Anthropic Claude models via Vertex AI.
  * 
  * Prerequisites:
  *   1. Authenticate: gcloud auth application-default login
@@ -76,6 +76,6 @@ export default function (pi: ExtensionAPI) {
     streamSimple: streamVertexAnthropic
   });
 
-  // TODO: Add vertex-gemini provider
-  // TODO: Add vertex-openai provider (when available)
+  // Future: Add vertex-gemini provider for Gemini models
+  // Future: Add other Vertex AI partner models as they become available
 }
