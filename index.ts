@@ -74,7 +74,9 @@ export default function (pi: ExtensionAPI) {
     apiKey: "GOOGLE_CLOUD_PROJECT", // For detection
     api: "vertex-anthropic" as Api,
     models: anthropicModels(location),
-    streamSimple: streamVertexAnthropic
+    // Pi's `streamSimple` signature is generic over Api; we know the runtime
+    // only ever hands us our own models, so widen the type here.
+    streamSimple: streamVertexAnthropic as unknown as Parameters<typeof pi.registerProvider>[1]["streamSimple"],
   });
 
   // Coming soon: vertex-gemini provider for Gemini models
