@@ -244,7 +244,13 @@ export function streamVertexAnthropic(
         projectId: projectId,
         // The SDK handles authentication via ADC
       };
-      
+
+      // The SDK builds `https://${region}-aiplatform.googleapis.com/v1` by
+      // default, which is wrong for the `global` endpoint (no subdomain prefix).
+      if (location === "global") {
+        clientOptions.baseURL = "https://aiplatform.googleapis.com/v1";
+      }
+
       // Add beta headers for 1M context models
       if (model.id.endsWith('[1m]')) {
         clientOptions.defaultHeaders = {
@@ -295,49 +301,56 @@ export function streamVertexAnthropic(
       // Beta headers are added to the client, not the params
 
       const messageStream = await client.messages.create(params);
-      
+
       stream.push({ type: "start", partial: output });
+
+      // Accumulate streamed input_json_delta fragments per content index. Each
+      // delta is a partial chunk of the tool input JSON, not a standalone JSON
+      // value, so we must concatenate before parsing.
+      const toolInputBuffers = new Map<number, string>();
 
       for await (const event of messageStream) {
         if (event.type === "content_block_start") {
           if (event.content_block.type === "text") {
             output.content.push({ type: "text", text: "" });
-            stream.push({ 
-              type: "text_start", 
-              contentIndex: output.content.length - 1, 
-              partial: output 
+            stream.push({
+              type: "text_start",
+              contentIndex: output.content.length - 1,
+              partial: output
             });
           } else if ((event.content_block as any).type === "thinking") {
             output.content.push({ type: "thinking", thinking: "" });
-            stream.push({ 
-              type: "thinking_start", 
-              contentIndex: output.content.length - 1, 
-              partial: output 
+            stream.push({
+              type: "thinking_start",
+              contentIndex: output.content.length - 1,
+              partial: output
             });
           } else if (event.content_block.type === "tool_use") {
+            const newIndex = output.content.length;
             output.content.push({
               type: "toolCall",
               id: event.content_block.id,
               name: event.content_block.name,
               arguments: {},
             });
-            stream.push({ 
-              type: "toolcall_start", 
-              contentIndex: output.content.length - 1, 
-              partial: output 
+            toolInputBuffers.set(newIndex, "");
+            stream.push({
+              type: "toolcall_start",
+              contentIndex: newIndex,
+              partial: output,
             });
           }
         } else if (event.type === "content_block_delta") {
           const index = event.index;
           const block = output.content[index];
-          
+
           if (event.delta.type === "text_delta" && block.type === "text") {
             block.text += event.delta.text;
-            stream.push({ 
-              type: "text_delta", 
-              contentIndex: index, 
-              delta: event.delta.text, 
-              partial: output 
+            stream.push({
+              type: "text_delta",
+              contentIndex: index,
+              delta: event.delta.text,
+              partial: output
             });
           } else if ((event.delta as any).type === "thinking_delta" && block.type === "thinking") {
             block.thinking += (event.delta as any).thinking;
@@ -348,39 +361,54 @@ export function streamVertexAnthropic(
               partial: output,
             });
           } else if (event.delta.type === "input_json_delta" && block.type === "toolCall") {
-            const partialJson = (event.delta.partial_json || "");
-            block.arguments = parseStreamingJson(partialJson);
+            const fragment = event.delta.partial_json || "";
+            const buffer = (toolInputBuffers.get(index) || "") + fragment;
+            toolInputBuffers.set(index, buffer);
+            block.arguments = parseStreamingJson(buffer);
             stream.push({
               type: "toolcall_delta",
               contentIndex: index,
-              delta: event.delta.partial_json,
+              delta: fragment,
               partial: output,
             });
           }
         } else if (event.type === "content_block_stop") {
           const index = event.index;
           const block = output.content[index];
-          
+
           if (block.type === "text") {
-            stream.push({ 
-              type: "text_end", 
-              contentIndex: index, 
-              content: block.text, 
-              partial: output 
+            stream.push({
+              type: "text_end",
+              contentIndex: index,
+              content: block.text,
+              partial: output
             });
           } else if (block.type === "thinking") {
-            stream.push({ 
-              type: "thinking_end", 
-              contentIndex: index, 
-              content: block.thinking, 
-              partial: output 
+            stream.push({
+              type: "thinking_end",
+              contentIndex: index,
+              content: block.thinking,
+              partial: output
             });
           } else if (block.type === "toolCall") {
-            stream.push({ 
-              type: "toolcall_end", 
-              contentIndex: index, 
-              toolCall: block, 
-              partial: output 
+            // Definitive parse of the complete buffer; tools require a dict.
+            const buffer = toolInputBuffers.get(index) ?? "";
+            if (buffer) {
+              try {
+                block.arguments = JSON.parse(buffer);
+              } catch {
+                block.arguments = parseStreamingJson(buffer);
+              }
+            }
+            if (typeof block.arguments !== "object" || block.arguments === null || Array.isArray(block.arguments)) {
+              block.arguments = {};
+            }
+            toolInputBuffers.delete(index);
+            stream.push({
+              type: "toolcall_end",
+              contentIndex: index,
+              toolCall: block,
+              partial: output,
             });
           }
         } else if (event.type === "message_delta") {
