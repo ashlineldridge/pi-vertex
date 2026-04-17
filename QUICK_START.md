@@ -24,7 +24,7 @@ Create or edit `~/.pi/agent/settings.json`:
 ```json
 {
   "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-opus-4-6[1m]",
+  "defaultModel": "claude-opus-4-7[1m]",
   "defaultThinkingLevel": "high"
 }
 ```
@@ -41,7 +41,7 @@ pi "Hello! Please confirm you're Claude via Vertex AI."
 
 ## Common Model Choices
 
-- **Best performance**: `claude-opus-4-6[1m]` (1M context)
+- **Best performance**: `claude-opus-4-7[1m]` (1M context, latest)
 - **Balanced**: `claude-sonnet-4-6[1m]` (1M context, faster)
 - **Cost-effective**: `claude-haiku-4-5` (200K context, fastest)
 

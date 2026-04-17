@@ -1,8 +1,10 @@
 {
   "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-opus-4-6[1m]",
+  "defaultModel": "claude-opus-4-7[1m]",
   "defaultThinkingLevel": "high",
   "enabledModels": [
+    "vertex-anthropic/claude-opus-4-7[1m]",
+    "vertex-anthropic/claude-opus-4-7",
     "vertex-anthropic/claude-opus-4-6[1m]",
     "vertex-anthropic/claude-sonnet-4-6[1m]",
     "vertex-anthropic/claude-opus-4-6",

@@ -25,6 +25,24 @@ export type AnthropicVertexModel = Model<"vertex-anthropic">;
 const CLAUDE_MODELS: AnthropicVertexModel[] = [
   // Opus models
   {
+    id: "claude-opus-4-7",
+    name: "Claude Opus 4.7",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    contextWindow: 200000,
+    maxTokens: 128000,
+  },
+  {
+    id: "claude-opus-4-7[1m]",
+    name: "Claude Opus 4.7 [1M]",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  },
+  {
     id: "claude-opus-4-6",
     name: "Claude Opus 4.6",
     reasoning: true,
