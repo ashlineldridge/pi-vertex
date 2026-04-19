@@ -622,12 +622,6 @@ export function streamVertexAnthropic(
       projectId,
     };
 
-    // The SDK builds `https://${region}-aiplatform.googleapis.com/v1` by
-    // default, which is wrong for the `global` endpoint (no subdomain prefix).
-    if (location === "global") {
-      (clientOptions as any).baseURL = "https://aiplatform.googleapis.com/v1";
-    }
-
     // Vertex requires the bare model id; pi exposes `[1m]` as a suffix to
     // distinguish the 1M context variant.
     const modelId = model.id.replace("[1m]", "");
