@@ -120,13 +120,25 @@ export function anthropicModels(location: string): AnthropicVertexModel[] {
 // =============================================================================
 
 /**
- * Removes unpaired Unicode surrogate characters that cause JSON serialization
- * failures in many API providers. Properly paired surrogates (valid emoji,
- * etc.) are preserved.
+ * Strips characters that are technically valid Unicode but unsafe to ship to
+ * the Anthropic API:
+ *
+ *   - Unpaired UTF-16 surrogate halves: JSON.stringify silently mangles or
+ *     throws on these depending on runtime.
+ *   - C0 control characters except common whitespace (TAB, LF, CR): some
+ *     downstream parsers (proxies, server-side validators) reject these even
+ *     though JSON.stringify escapes them.
+ *   - DEL (U+007F) and the C1 control range U+0080–U+009F (includes NEL).
+ *   - Unicode line/paragraph separators (U+2028, U+2029): valid JSON since
+ *     ES2019 but treated as line terminators by Node's `readline` and other
+ *     SSE pipelines, splitting payloads mid-string. See
+ *     https://github.com/anthropics/anthropic-sdk-typescript/issues/882
+ *
+ * Properly paired surrogates (real emoji etc.) are preserved.
  */
-function sanitizeSurrogates(text: string): string {
+function sanitizeText(text: string): string {
   return text.replace(
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u2028\u2029]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
     "",
   );
 }
@@ -181,14 +193,14 @@ function convertContentBlocks(
   const hasImages = content.some((c) => c.type === "image");
 
   if (!hasImages) {
-    return sanitizeSurrogates(
+    return sanitizeText(
       content.map((c) => (c as TextContent).text).join("\n"),
     );
   }
 
   const blocks = content.map((block) => {
     if (block.type === "text") {
-      return { type: "text" as const, text: sanitizeSurrogates(block.text) };
+      return { type: "text" as const, text: sanitizeText(block.text) };
     }
     return {
       type: "image" as const,
@@ -223,7 +235,7 @@ function convertMessages(
 
     if (msg.role === "user") {
       if (typeof msg.content === "string") {
-        const sanitized = sanitizeSurrogates(msg.content);
+        const sanitized = sanitizeText(msg.content);
         if (sanitized.trim().length > 0) {
           params.push({ role: "user", content: sanitized });
         }
@@ -232,7 +244,7 @@ function convertMessages(
 
       const blocks: ContentBlockParam[] = msg.content.map((item) => {
         if (item.type === "text") {
-          return { type: "text", text: sanitizeSurrogates(item.text) };
+          return { type: "text", text: sanitizeText(item.text) };
         }
         return {
           type: "image",
@@ -268,7 +280,7 @@ function convertMessages(
       for (const block of msg.content) {
         if (block.type === "text") {
           if (block.text.trim().length === 0) continue;
-          blocks.push({ type: "text", text: sanitizeSurrogates(block.text) });
+          blocks.push({ type: "text", text: sanitizeText(block.text) });
         } else if (block.type === "thinking") {
           // Redacted thinking: pass the opaque payload back.
           if (block.redacted && block.thinkingSignature) {
@@ -288,12 +300,12 @@ function convertMessages(
           ) {
             blocks.push({
               type: "text",
-              text: sanitizeSurrogates(block.thinking),
+              text: sanitizeText(block.thinking),
             });
           } else {
             blocks.push({
               type: "thinking",
-              thinking: sanitizeSurrogates(block.thinking),
+              thinking: sanitizeText(block.thinking),
               signature: block.thinkingSignature,
             });
           }
@@ -660,7 +672,7 @@ export function streamVertexAnthropic(
 
     if (context.systemPrompt) {
       baseParams.system = [
-        { type: "text", text: sanitizeSurrogates(context.systemPrompt) },
+        { type: "text", text: sanitizeText(context.systemPrompt) },
       ];
     }
 
