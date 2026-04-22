@@ -31,19 +31,10 @@ export type AnthropicVertexModel = Model<"vertex-anthropic">;
 
 // Model registry. Every value here is sourced from Vertex's per-model spec
 // pages under https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/
-// rather than Anthropic's direct API docs. Notable Vertex-vs-Anthropic
-// differences this reflects:
-//
-//   - There is no separate "200K" vs "1M" model on Vertex. Opus 4.6, Opus
-//     4.7, and Sonnet 4.6 are all single 1M-context entries; the
-//     `context-1m-2025-08-07` Anthropic beta header is not documented as
-//     required (or even mentioned) on Vertex's docs.
-//   - Sonnet 4.6's documented Vertex max output is 128K, not the 64K the
-//     Anthropic-direct docs imply.
-//   - Vertex documents PDF/Documents as a separate input modality on these
-//     models; pi's `Model.input` enum only has `text` and `image`, so we
-//     can't surface that capability through this provider yet (would need
-//     a pi-ai type extension to express).
+// PDF/Documents is listed as a separate input modality on those pages,
+// but pi's `Model.input` enum only has `text` and `image`, so we can't
+// surface that capability through this provider yet (would need a pi-ai
+// type extension to express).
 //
 // Cost is intentionally zero. Vertex's published rates are now known and
 // for the global endpoint match Anthropic-direct ($5/$25 input/output per
@@ -109,7 +100,47 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     contextWindow: 200000,
     maxTokens: 64000,
   },
+
+  // -manual variants: opt-in to manual `{ type: "enabled", budget_tokens: N }`
+  // thinking instead of the default adaptive shape. The same wire model id
+  // is sent to Vertex (the suffix is stripped before the API call). Use
+  // these when you need a hard ceiling on thinking spend or reproducible
+  // per-turn token usage.
+  //
+  // Anthropic is moving newer models toward adaptive thinking as the
+  // primary mode: Opus 4.6 and Sonnet 4.6 still accept manual but
+  // recommend adaptive; Opus 4.7 only accepts adaptive (manual returns
+  // 400). We don't expose a -manual variant for Opus 4.7 (would 400) or
+  // Haiku 4.5 (already manual-only on its bare entry).
+  {
+    id: "claude-opus-4-6-manual",
+    name: "Claude Opus 4.6 (manual thinking)",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { ...ZERO_COST },
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  },
+  {
+    id: "claude-sonnet-4-6-manual",
+    name: "Claude Sonnet 4.6 (manual thinking)",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { ...ZERO_COST },
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  },
 ];
+
+// Exported for tests and for the streaming entry point. Strips the `-manual`
+// suffix (if present) from a pi-side model id to recover the bare Vertex
+// publisher model id, and reports whether the suffix was present.
+export function deriveWireModelId(modelId: string): { wireId: string; isManualOverride: boolean } {
+  if (modelId.endsWith("-manual")) {
+    return { wireId: modelId.slice(0, -"-manual".length), isManualOverride: true };
+  }
+  return { wireId: modelId, isManualOverride: false };
+}
 
 export function anthropicModels(location: string): AnthropicVertexModel[] {
   const baseUrl =
@@ -547,7 +578,8 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 //        thinking: { type: "adaptive", display: "summarized" }
 //        output_config: { effort: "low" | "medium" | "high" | "xhigh" | "max" }
 //      Required on Opus 4.7. Recommended on Opus 4.6 and Sonnet 4.6
-//      (manual still functional but deprecated). Not used on Haiku 4.5.
+//      (manual still functional on those, but adaptive is what newer
+//      models are moving to). Not used on Haiku 4.5.
 //
 // Effort levels per the Anthropic adaptive-thinking docs:
 //   - `max` ("no constraints on thinking depth"):
@@ -819,13 +851,12 @@ export function streamVertexAnthropic(
       projectId,
     };
 
-    // The model id is sent to Vertex as-is. There is no Anthropic-direct
-    // `[1m]` / `-1m` suffix to strip and no `context-1m-2025-08-07` beta
-    // header to set: per Vertex's per-model spec pages, Opus 4.6/4.7 and
-    // Sonnet 4.6 simply *are* 1M-context models, with no opt-in mechanism
-    // documented. Haiku 4.5 is documented as 200K. See contextWindow on
-    // each CLAUDE_MODELS entry above.
-    const modelId = model.id;
+    // Strip the optional `-manual` suffix to recover the bare Vertex
+    // publisher model id. The suffix is a pi-side fiction that flips the
+    // thinking dispatch from adaptive (default on Opus 4.6 / Sonnet 4.6)
+    // to the manual `{ type: "enabled", budget_tokens }` shape; the same
+    // wire model id is sent to Vertex either way.
+    const { wireId: modelId, isManualOverride } = deriveWireModelId(model.id);
 
     // NB: We deliberately do *not* enable `fine-grained-tool-streaming-2025-05-14`.
     // That beta is what produces the malformed-JSON tool inputs reported in
@@ -866,11 +897,16 @@ export function streamVertexAnthropic(
     // (see the long comment block on `ADAPTIVE_THINKING_MODELS` for the
     // citations). Opus 4.7 will 400 if we send manual config, so this
     // dispatch is not optional.
+    //
+    // The `-manual` suffix is the user's explicit opt-out from adaptive on
+    // models that support both modes (Opus 4.6, Sonnet 4.6). When set, we
+    // route through the manual branch even though the bare wire id would
+    // normally take adaptive.
     let thinkingEnabled = false;
     if (model.reasoning && options?.reasoning) {
       thinkingEnabled = true;
-      if (supportsAdaptiveThinking(model.id)) {
-        const effort = reasoningToEffort(options.reasoning, model.id);
+      if (!isManualOverride && supportsAdaptiveThinking(modelId)) {
+        const effort = reasoningToEffort(options.reasoning, modelId);
         (baseParams as any).thinking = { type: "adaptive", display: "summarized" };
         (baseParams as any).output_config = { effort };
       } else {

@@ -1,35 +1,24 @@
 /**
- * Google Cloud Vertex AI Provider for Pi
- *
- * Currently supports Anthropic Claude models via Vertex AI.
- * Gemini and other Vertex AI models coming soon.
+ * Google Cloud Vertex AI provider for the Pi coding agent. Registers the
+ * `vertex-anthropic` provider with Anthropic Claude models exposed through
+ * Vertex's partner-models API.
  *
  * Prerequisites:
  *   1. Authenticate: gcloud auth application-default login
  *   2. Set environment variables:
- *      - GOOGLE_CLOUD_PROJECT or GCLOUD_PROJECT: Your GCP project ID
- *      - GOOGLE_CLOUD_LOCATION: Region (required)
+ *      - GOOGLE_CLOUD_PROJECT (or GCLOUD_PROJECT, ANTHROPIC_VERTEX_PROJECT_ID,
+ *        VERTEX_PROJECT_ID)
+ *      - GOOGLE_CLOUD_LOCATION (or CLOUD_ML_REGION, VERTEX_REGION)
  *
- * Usage:
- *   pi --provider vertex-anthropic --model claude-opus-4-7
+ * See README.md for full setup and supported models.
  */
 
-import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type {
-  Api,
-  Model,
-  SimpleStreamOptions,
-  AssistantMessageEventStream
-} from "@mariozechner/pi-ai";
+import type { Api } from "@mariozechner/pi-ai";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import {
-  anthropicModels,
-  streamVertexAnthropic,
-  type AnthropicVertexModel
-} from "./src/providers/anthropic.js";
+import { anthropicModels, streamVertexAnthropic } from "./src/providers/anthropic.js";
 
 // Check for Google Cloud ADC credentials
 function hasAdcCredentials(): boolean {
@@ -67,17 +56,24 @@ export default function (pi: ExtensionAPI) {
     return;
   }
 
-  // Register Anthropic models via Vertex AI
+  // The provider-level baseUrl is informational — each model carries its
+  // own baseUrl built by anthropicModels(location), and that is what the
+  // streaming entry point actually uses. We mirror the same regional /
+  // global URL shape here so the two stay consistent.
+  const providerBaseUrl =
+    location === "global"
+      ? "https://aiplatform.googleapis.com"
+      : `https://${location}-aiplatform.googleapis.com`;
+
   pi.registerProvider("vertex-anthropic", {
-    baseUrl: `https://${location}-aiplatform.googleapis.com`,
-    apiKey: "GOOGLE_CLOUD_PROJECT", // For detection
+    baseUrl: providerBaseUrl,
+    // pi uses this string to detect provider availability via env var
+    // presence; it is not an actual API key. Auth is via Google ADC.
+    apiKey: "GOOGLE_CLOUD_PROJECT",
     api: "vertex-anthropic" as Api,
     models: anthropicModels(location),
     // Pi's `streamSimple` signature is generic over Api; we know the runtime
     // only ever hands us our own models, so widen the type here.
     streamSimple: streamVertexAnthropic as unknown as Parameters<typeof pi.registerProvider>[1]["streamSimple"],
   });
-
-  // Coming soon: vertex-gemini provider for Gemini models
-  // Coming soon: Other Vertex AI partner models (OpenAI, Mistral, etc.)
 }

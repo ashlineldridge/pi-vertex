@@ -14,41 +14,25 @@ user-visible setting in Vertex's per-model spec pages
 
 User-visible changes:
 
-- **No more 1M-context suffix variants.** Earlier unreleased work in
-  this cycle introduced an Anthropic-Code-style `[1m]` suffix and then
-  renamed it to `-1m` after the brackets collided with minimatch glob
-  syntax in pi's `enabledModels`. Both are now gone: Vertex doesn't
-  model 1M context as a separate id or a beta-header opt-in. Opus 4.6,
-  Opus 4.7, and Sonnet 4.6 are documented as single 1M-context entries
-  on Vertex; we expose them as such and no longer send the
-  `context-1m-2025-08-07` Anthropic beta header (which isn't documented
-  as required, or mentioned, on Vertex). Any settings.json referencing
-  `claude-*-1m` or `claude-*[1m]` needs renaming to the bare id
-  (`claude-opus-4-7`, etc.).
-
 - **Sonnet 4.6 max output corrected from 64K to 128K.** Vertex's spec page
   for `claude-sonnet-4-6` documents `Maximum output tokens: 128,000`, not
   the 64K Anthropic-direct figure we previously carried.
 
-- **Adaptive thinking dispatch corrected.** The Vertex Model Garden cards
-  for Opus 4.6 and Opus 4.7 link to
-  https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
-  as the canonical source for thinking semantics on Vertex, and that page
-  prescribes a per-model rule:
+- **Per-model thinking-mode dispatch.** Anthropic exposes two thinking
+  shapes and Vertex forwards both. Newer models are moving toward
+  adaptive as the primary mode. The dispatch this release ships:
 
-  | Model        | Manual `{ type: "enabled", budget_tokens }` | Adaptive `{ type: "adaptive" }` + effort |
-  | ------------ | -------------------------------------------- | ----------------------------------------- |
-  | Opus 4.7     | **Returns 400 error**                        | **Required**                              |
-  | Opus 4.6     | Deprecated, still functional                 | Recommended                               |
-  | Sonnet 4.6   | Deprecated, still functional                 | Recommended                               |
-  | Haiku 4.5    | Supported                                    | Not used                                  |
+  | Model        | Manual `{ type: "enabled", budget_tokens }` | Adaptive `{ type: "adaptive" }` + effort | What we send |
+  | ------------ | ------------------------------------------- | ----------------------------------------- | ------------ |
+  | Opus 4.7     | Returns 400 error                           | Required                                  | adaptive     |
+  | Opus 4.6     | Supported                                   | Recommended                               | adaptive     |
+  | Sonnet 4.6   | Supported                                   | Recommended                               | adaptive     |
+  | Haiku 4.5    | Supported (only mode)                       | Not used                                  | manual       |
 
-  We dispatch accordingly: adaptive for Opus 4.6 / 4.7 / Sonnet 4.6,
-  manual for Haiku.
-
-  pi's `xhigh` thinking level maps to Anthropic's effort string
-  name-faithfully where the model accepts it, falling back to `max`
-  (the documented uniform top tier) where it doesn't:
+  pi's `xhigh` thinking level maps to Anthropic's `effort` name-faithfully
+  where the model accepts it, falling back to `max` (the documented
+  uniform top tier on every adaptive-supporting model) where it doesn't.
+  `xhigh` is documented as Opus-4.7-only. The full mapping:
 
   | pi level | Opus 4.7 | Opus 4.6 | Sonnet 4.6 | Other adaptive |
   | -------- | -------- | -------- | ---------- | -------------- |
@@ -58,13 +42,21 @@ User-visible changes:
   | `low`    | `low`    | `low`    | `low`      | `low`          |
   | `minimal`| `low`    | `low`    | `low`      | `low`          |
 
-  Sonnet 4.6 previously got `high` here, under-utilizing thinking when
-  the user picked xhigh; it now correctly goes to `max`. Verified live
-  on the Vertex global endpoint.
+  Verified live on the Vertex global endpoint that each effort string is
+  accepted by its target model.
 
-- **Models exposed: 4 entries (down from 7).** `claude-opus-4-7`,
-  `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`. All except
-  Haiku have 1M context per the Vertex docs.
+- **Opt-in `-manual` model variants.** `claude-opus-4-6-manual` and
+  `claude-sonnet-4-6-manual` send the manual
+  `{ type: "enabled", budget_tokens: N }` thinking shape instead of the
+  adaptive default. Same wire model id as their bare counterpart — the
+  suffix is purely a pi-side switch. Use these for predictable cost or
+  reproducible per-turn token spend. No `-manual` variant for Opus 4.7
+  (would 400) or Haiku 4.5 (already manual on its bare entry).
+
+- **Models exposed: 6 entries.** `claude-opus-4-7`, `claude-opus-4-6`,
+  `claude-opus-4-6-manual`, `claude-sonnet-4-6`,
+  `claude-sonnet-4-6-manual`, `claude-haiku-4-5`. All Opus and Sonnet
+  entries have 1M context per the Vertex docs.
 
 No wire-format / auth changes; the Vertex SDK still injects
 `anthropic_version: "vertex-2023-10-16"` and routes to
@@ -79,8 +71,10 @@ as before.
   through unchanged on Vertex. That assumption silently rotted: Opus 4.6
   and 4.7 stayed pinned at the legacy 4.0/4.1 tier ($15 / $75 per million)
   and over-reported costs by 3x until this release. Even with rates kept
-  current, the figures wouldn't account for Vertex's separate cache
-  pricing or the >200K-token premium tier on the 1M-context models.
+  current, pi's single per-model cost field can't express two real
+  Vertex behaviours: regional endpoints carry a ~10% premium over the
+  global endpoint, and some models have separate >200K-input pricing
+  tiers at regional endpoints.
 
   Rather than ship subtly-wrong numbers, this release reports `$0` for
   every model. Token counts still come straight from the API response, so
@@ -163,6 +157,9 @@ type errors. Aligned with `@mariozechner/pi-ai`'s reference Anthropic provider:
 
 ### Notes
 
-After these fixes the package typechecks cleanly. There are still no unit
-tests; adding coverage for the message-conversion and stream-event handling
-paths is recommended follow-up.
+After these fixes the package typechecks cleanly. Test coverage now
+includes the model registry, wire-id derivation, the `enabledModels`
+resolver path, the thinking-shape dispatch, the per-level effort
+mapping, and the message-conversion / interrupted-tool-call repair
+behaviour. Live verification against the Vertex global endpoint
+confirmed every model + thinking-level combination this release ships.
