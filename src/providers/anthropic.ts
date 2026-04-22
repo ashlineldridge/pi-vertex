@@ -40,15 +40,36 @@ export type AnthropicVertexModel = Model<"vertex-anthropic">;
 //     required (or even mentioned) on Vertex's docs.
 //   - Sonnet 4.6's documented Vertex max output is 128K, not the 64K the
 //     Anthropic-direct docs imply.
+//   - Vertex documents PDF/Documents as a separate input modality on these
+//     models; pi's `Model.input` enum only has `text` and `image`, so we
+//     can't surface that capability through this provider yet (would need
+//     a pi-ai type extension to express).
 //
-// Cost is intentionally zero. Vertex bills you (not Anthropic), the
-// authoritative pricing lives in Google's Vertex AI pricing docs, and
-// hand-mirrored numbers rotted in a previous release (Opus 4.6/4.7 carried
-// the legacy 4.0/4.1 $15/$75 tier for months and over-reported by 3x).
-// Reporting `$0` is more honest than reporting a wrong figure with
-// confidence. Token counts still flow through unchanged; only the dollar
-// display is suppressed. Override per-model in `~/.pi/agent/models.json`
-// via `modelOverrides` if you want approximate cost back.
+// Cost is intentionally zero. Vertex's published rates are now known and
+// for the global endpoint match Anthropic-direct ($5/$25 input/output per
+// million for Opus 4.6/4.7, $3/$15 for Sonnet 4.6, $1/$5 for Haiku 4.5).
+// We still report zero because pi's single `cost` field can't express
+// either of two real Vertex behaviours that affect the displayed total:
+//
+//   1. Regional endpoints carry a 10% premium over global (e.g. Opus 4.6
+//      on us-east5 is $5.50/$27.50 vs $5/$25 on global).
+//   2. At regional endpoints Sonnet has a >200K input premium tier
+//      ($3.30/$16.50 below 200K, $6.60/$24.75 above). Global currently
+//      doesn't apply this premium for the four models we ship, but the
+//      tiering shape exists in Google's pricing docs.
+//
+// A previous release shipped hand-coded Anthropic-direct rates that went
+// stale (Opus 4.6/4.7 carried the legacy 4.0/4.1 $15/$75 tier and
+// over-reported by 3x). Zeroing out is the safest baseline given the
+// regional/tier complexity. Token counts still flow through unchanged.
+// Override per-model in `~/.pi/agent/models.json` via `modelOverrides` if
+// you want a fixed approximate cost (the global rates above are a good
+// starting point if your `GOOGLE_CLOUD_LOCATION` is `global`).
+//
+// Pricing source: https://cloud.google.com/vertex-ai/generative-ai/pricing
+// (search "Anthropic's Claude models" — the page anchors are unstable).
+// Per-model spec pages also link to /pricing#claude-models from their
+// "Pricing" sections.
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
 const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[] = [
@@ -511,8 +532,9 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 //
 // Two thinking-config shapes are in play, and the per-model rule is set by
 // Anthropic (the Vertex Model Garden cards for these models link directly
-// to https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
-// as the canonical source for thinking semantics on Vertex):
+// to https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking
+// and .../extended-thinking as the canonical source for thinking semantics
+// on Vertex):
 //
 //   1. Manual / budget-based:
 //        { type: "enabled", budget_tokens: <number> }
@@ -527,10 +549,29 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 //      Required on Opus 4.7. Recommended on Opus 4.6 and Sonnet 4.6
 //      (manual still functional but deprecated). Not used on Haiku 4.5.
 //
-// The `effort` strings differ across the recommending models:
-//   - Opus 4.7 documents the top tier as `xhigh`.
-//   - Opus 4.6 documents the top tier as `max`.
-//   - Other models top out at `high`.
+// Effort levels per the Anthropic adaptive-thinking docs:
+//   - `max` ("no constraints on thinking depth"):
+//         supported on Opus 4.7, Opus 4.6, Sonnet 4.6.
+//   - `xhigh` ("thinks deeply with extended exploration"):
+//         supported on Opus 4.7 ONLY.
+//   - `high` (default), `medium`, `low`: supported on all adaptive models.
+//
+// `max` and `xhigh` aren't strictly ordered in the docs — they describe
+// different behaviours. `max` removes the depth ceiling; `xhigh` is
+// targeted exploration. Both work on Opus 4.7; only `max` works on the
+// other two adaptive models.
+//
+// pi's `xhigh` thinking level is its semantic top tier. We preserve the
+// user's intent name-faithfully where the model supports it, and fall
+// back to `max` where it doesn't:
+//
+//   - Opus 4.7: pi xhigh -> Anthropic xhigh (model supports it)
+//   - Opus 4.6: pi xhigh -> Anthropic max  (xhigh unsupported on 4.6)
+//   - Sonnet 4.6: pi xhigh -> Anthropic max  (xhigh unsupported on Sonnet 4.6)
+//   - Anything else (defensive): pi xhigh -> Anthropic high
+//
+// Verified live on 2026-04-23 against Vertex global endpoint: each of the
+// above effort strings is accepted with no 400 on its target model.
 //
 // We dispatch per model id below. If anyone reintroduces a model that
 // only supports manual, drop it from ADAPTIVE_THINKING_MODELS.
@@ -558,7 +599,11 @@ function reasoningToBudget(
   return custom?.[level] ?? defaults[level];
 }
 
-function reasoningToEffort(
+// Exported for tests so a regression in this mapping fails the suite
+// rather than silently sending an unsupported effort string (e.g.
+// `xhigh` on Sonnet 4.6) and getting a 400, or under-utilizing thinking
+// (e.g. `high` on Sonnet 4.6 when `max` is available).
+export function reasoningToEffort(
   level: NonNullable<SimpleStreamOptions["reasoning"]>,
   modelId: string,
 ): "low" | "medium" | "high" | "xhigh" | "max" {
@@ -571,10 +616,12 @@ function reasoningToEffort(
     case "high":
       return "high";
     case "xhigh":
-      // Opus 4.6 calls the top tier "max"; Opus 4.7 calls it "xhigh".
-      // Anything else clamps to "high".
-      if (modelId.includes("opus-4-6")) return "max";
+      // Name-fidelity where the model supports it; fall back to `max`
+      // (the documented uniform top tier) where it doesn't. See the
+      // long comment block above for the per-model availability rule
+      // and citations.
       if (modelId.includes("opus-4-7")) return "xhigh";
+      if (modelId.includes("opus-4-6") || modelId.includes("sonnet-4-6")) return "max";
       return "high";
   }
 }

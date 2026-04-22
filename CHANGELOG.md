@@ -44,9 +44,23 @@ User-visible changes:
   | Haiku 4.5    | Supported                                    | Not used                                  |
 
   We dispatch accordingly: adaptive for Opus 4.6 / 4.7 / Sonnet 4.6,
-  manual for Haiku. The `xhigh` thinking level maps to effort `"xhigh"`
-  on Opus 4.7, `"max"` on Opus 4.6, and `"high"` elsewhere (per the
-  effort levels the docs accept on each model).
+  manual for Haiku.
+
+  pi's `xhigh` thinking level maps to Anthropic's effort string
+  name-faithfully where the model accepts it, falling back to `max`
+  (the documented uniform top tier) where it doesn't:
+
+  | pi level | Opus 4.7 | Opus 4.6 | Sonnet 4.6 | Other adaptive |
+  | -------- | -------- | -------- | ---------- | -------------- |
+  | `xhigh`  | `xhigh`  | `max`    | `max`      | `high`         |
+  | `high`   | `high`   | `high`   | `high`     | `high`         |
+  | `medium` | `medium` | `medium` | `medium`   | `medium`       |
+  | `low`    | `low`    | `low`    | `low`      | `low`          |
+  | `minimal`| `low`    | `low`    | `low`      | `low`          |
+
+  Sonnet 4.6 previously got `high` here, under-utilizing thinking when
+  the user picked xhigh; it now correctly goes to `max`. Verified live
+  on the Vertex global endpoint.
 
 - **Models exposed: 4 entries (down from 7).** `claude-opus-4-7`,
   `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`. All except

@@ -23,7 +23,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { minimatch } from "minimatch";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Api, Model } from "@mariozechner/pi-ai";
-import { anthropicModels, supportsAdaptiveThinking } from "./anthropic.js";
+import { anthropicModels, reasoningToEffort, supportsAdaptiveThinking } from "./anthropic.js";
 
 // pi-coding-agent's `exports` map only lists `.` and `./hooks`, so we can't
 // import the resolver by package name. Walk up from this file's URL to the
@@ -251,5 +251,56 @@ describe("thinking-config dispatch rule (per Anthropic extended-thinking docs)",
     for (const m of models) {
       expect(typeof supportsAdaptiveThinking(m.id), `${m.id}`).toBe("boolean");
     }
+  });
+});
+
+describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () => {
+  // Per the Anthropic adaptive-thinking docs, `effort` availability differs:
+  //
+  //   - `max`:   Opus 4.7, Opus 4.6, Sonnet 4.6
+  //   - `xhigh`: Opus 4.7 ONLY
+  //   - `high` / `medium` / `low`: every adaptive-supporting model
+  //
+  // pi's `xhigh` is the user's semantic top tier. We send `xhigh` on the
+  // model that actually accepts it (Opus 4.7, name-faithful) and fall back
+  // to `max` on the others (Opus 4.6, Sonnet 4.6) so we don't 400 by
+  // sending `xhigh` to a model that doesn't take it.
+  //
+  // Verified live on 2026-04-23 against Vertex global endpoint: `xhigh`
+  // accepted on Opus 4.7; `max` accepted on Opus 4.7, Opus 4.6, Sonnet 4.6.
+
+  it("low / minimal -> 'low' on every model", () => {
+    for (const m of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
+      expect(reasoningToEffort("low", m)).toBe("low");
+      expect(reasoningToEffort("minimal", m)).toBe("low");
+    }
+  });
+
+  it("medium -> 'medium' on every model", () => {
+    for (const m of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
+      expect(reasoningToEffort("medium", m)).toBe("medium");
+    }
+  });
+
+  it("high -> 'high' on every model", () => {
+    for (const m of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
+      expect(reasoningToEffort("high", m)).toBe("high");
+    }
+  });
+
+  it("xhigh -> 'xhigh' on Opus 4.7 (name-faithful; model supports it)", () => {
+    expect(reasoningToEffort("xhigh", "claude-opus-4-7")).toBe("xhigh");
+  });
+
+  it("xhigh -> 'max' on Opus 4.6 and Sonnet 4.6 (xhigh unsupported; max is the documented substitute)", () => {
+    expect(reasoningToEffort("xhigh", "claude-opus-4-6")).toBe("max");
+    expect(reasoningToEffort("xhigh", "claude-sonnet-4-6")).toBe("max");
+  });
+
+  it("xhigh -> 'high' as defensive fallback on unrecognized adaptive models", () => {
+    // A future adaptive-capable model id we haven't pinned a rule for yet
+    // shouldn't get a 400. `high` is the documented default that every
+    // adaptive model accepts.
+    expect(reasoningToEffort("xhigh", "claude-future-model-x")).toBe("high");
   });
 });
