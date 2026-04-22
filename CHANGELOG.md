@@ -59,6 +59,27 @@ User-visible changes:
   Verified live on the Vertex global endpoint that each effort string in
   this table is accepted by its target model with no 400.
 
+  **Known upstream limitation:** pi-coding-agent uses pi-ai's
+  `supportsXhigh()` to decide whether the `xhigh` level is available
+  for a given model. That function (as of pi-ai 0.68) only recognizes
+  Opus 4.6, Opus 4.7, and GPT-5.x. Sonnet 4.6 and Haiku 4.5 are not
+  listed, so pi clamps `xhigh → high` before this extension is called.
+  The mapping above for `xhigh` on Sonnet 4.6 and Haiku 4.5 is
+  therefore unreachable in normal pi usage:
+
+  - `claude-sonnet-4-6` + `--thinking xhigh` → wire sends `effort: high`
+    (not `max`).
+  - `claude-haiku-4-5` + `--thinking xhigh` → wire sends
+    `budget_tokens: 20480` (not 32768).
+  - Same for `claude-sonnet-4-6-manual`.
+
+  Fix requires a one-line broadening of pi-ai's `supportsXhigh()` to
+  include `sonnet-4-6` and `haiku-4-5`. Until that lands upstream, the
+  affected combinations behave as if `--thinking high` had been
+  specified. The extension's mapping is correct — the clamp happens
+  before our `streamSimple` is invoked and we have no hook to override
+  it.
+
 - **Opt-in `-manual` model variants.** `claude-opus-4-6-manual` and
   `claude-sonnet-4-6-manual` send the manual
   `{ type: "enabled", budget_tokens: N }` thinking shape instead of the
