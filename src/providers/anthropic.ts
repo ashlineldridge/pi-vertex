@@ -29,7 +29,30 @@ import { parse as partialParse } from "partial-json";
 
 export type AnthropicVertexModel = Model<"vertex-anthropic">;
 
-// Latest Claude models with accurate pricing and limits.
+// Pricing is intentionally left at zero for every model.
+//
+// Vertex bills you (not Anthropic), and the authoritative source for actual
+// rates is Google's official Vertex AI pricing documentation (search for
+// the partner-model / Claude pricing section).
+//
+// We previously hand-mirrored Anthropic's direct rates here on the
+// assumption that Google passes them through unchanged. That assumption
+// silently rotted (Opus 4.6/4.7 stayed at the legacy 4.0/4.1 tier and
+// over-reported by 3x for months), and even when correct the numbers don't
+// account for cache-pricing differences on Vertex or the >200K-token
+// premium tier. Reporting nothing is more honest than reporting wrong
+// figures with confidence.
+//
+// Token counts still flow through correctly — they come from the API
+// response, not from this config — so usage tracking, context-window
+// math, and compaction all keep working. Only the dollar display is
+// suppressed.
+//
+// If you want approximate cost tracking, fill these in from Google's
+// pricing docs and add a calendar reminder to re-check; or override
+// per-model in your own `~/.pi/agent/models.json` via `modelOverrides`.
+const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
+
 const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[] = [
   // Opus models
   {
@@ -37,16 +60,16 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     name: "Claude Opus 4.7",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    cost: { ...ZERO_COST },
     contextWindow: 200000,
     maxTokens: 128000,
   },
   {
-    id: "claude-opus-4-7[1m]",
-    name: "Claude Opus 4.7 [1M]",
+    id: "claude-opus-4-7-1m",
+    name: "Claude Opus 4.7 (1M)",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    cost: { ...ZERO_COST },
     contextWindow: 1000000,
     maxTokens: 128000,
   },
@@ -55,16 +78,16 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     name: "Claude Opus 4.6",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    cost: { ...ZERO_COST },
     contextWindow: 200000,
     maxTokens: 128000,
   },
   {
-    id: "claude-opus-4-6[1m]",
-    name: "Claude Opus 4.6 [1M]",
+    id: "claude-opus-4-6-1m",
+    name: "Claude Opus 4.6 (1M)",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    cost: { ...ZERO_COST },
     contextWindow: 1000000,
     maxTokens: 128000,
   },
@@ -75,16 +98,16 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     name: "Claude Sonnet 4.6",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    cost: { ...ZERO_COST },
     contextWindow: 200000,
     maxTokens: 64000,
   },
   {
-    id: "claude-sonnet-4-6[1m]",
-    name: "Claude Sonnet 4.6 [1M]",
+    id: "claude-sonnet-4-6-1m",
+    name: "Claude Sonnet 4.6 (1M)",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    cost: { ...ZERO_COST },
     contextWindow: 1000000,
     maxTokens: 64000,
   },
@@ -95,7 +118,7 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     name: "Claude Haiku 4.5",
     reasoning: true,
     input: ["text", "image"],
-    cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+    cost: { ...ZERO_COST },
     contextWindow: 200000,
     maxTokens: 64000,
   },
@@ -754,10 +777,12 @@ export function streamVertexAnthropic(
       projectId,
     };
 
-    // Vertex requires the bare model id; pi exposes `[1m]` as a suffix to
-    // distinguish the 1M context variant.
-    const modelId = model.id.replace("[1m]", "");
-    const is1M = model.id.endsWith("[1m]");
+    // Vertex requires the bare model id; pi exposes a `-1m` suffix to
+    // distinguish the 1M context variant. The suffix used to be `[1m]` to
+    // mirror Claude Code, but the brackets collide with minimatch character
+    // classes when users list these ids in `enabledModels`.
+    const is1M = model.id.endsWith("-1m");
+    const modelId = is1M ? model.id.slice(0, -"-1m".length) : model.id;
 
     const betaFeatures: string[] = [];
     if (is1M) betaFeatures.push("context-1m-2025-08-07");

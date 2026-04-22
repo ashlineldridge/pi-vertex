@@ -1,259 +1,149 @@
-# Pi Vertex AI Provider
+# pi-vertex
 
-Access Anthropic Claude models through Google Cloud Vertex AI in the Pi coding
-agent. Support for Gemini and other Vertex AI models coming soon.
+A [pi](https://github.com/badlogic/pi-mono) extension that adds a
+`vertex-anthropic` provider for calling Anthropic Claude models via Google
+Cloud Vertex AI.
 
-## Features
-
-- 🚀 All latest Claude models via Vertex AI (Opus, Sonnet, Haiku)
-- 💡 1M context window support with `[1m]` suffix
-- 🔧 Easy authentication via Google Cloud SDK
-- 🎯 Full support for reasoning, tools, and streaming
-- 📦 Matches Claude Code's model naming conventions
+Gemini and other Vertex partner models are not supported yet.
 
 ## Prerequisites
 
-- Pi coding agent installed (`npm install -g @mariozechner/pi-coding-agent`)
-- Google Cloud SDK installed (`gcloud` CLI)
-- A Google Cloud project with billing enabled
-- Vertex AI API enabled in your project
-- Access to Anthropic models in Vertex AI Model Garden
+- pi installed: `npm install -g @mariozechner/pi-coding-agent`
+- `gcloud` CLI installed
+- A Google Cloud project with billing enabled and the Vertex AI API enabled
+- Access to the Anthropic models you want to use, granted in
+  [Vertex AI Model Garden](https://console.cloud.google.com/vertex-ai/model-garden)
 
-## Installation
+## Install
 
 ```bash
 pi install https://github.com/ashlineldridge/pi-vertex
 ```
 
-Verify installation:
+Verify the provider is registered:
 
 ```bash
 pi --list-models | grep vertex-anthropic
-# Should show available Claude models
 ```
 
-## Setup
-
-### 1. Authenticate with Google Cloud
+## Authenticate
 
 ```bash
 gcloud auth application-default login
 ```
 
-### 2. Set Environment Variables
+## Configure environment
+
+Set these in your shell config (`~/.zshrc`, `~/.bashrc`, etc.):
 
 ```bash
-# Required
 export GOOGLE_CLOUD_PROJECT=your-project-id
-export GOOGLE_CLOUD_LOCATION=your-region  # e.g., us-east5, us-central1, europe-west4
+export GOOGLE_CLOUD_LOCATION=us-east5  # or another supported region
 ```
 
-### 3. Enable Models in Vertex AI Model Garden
+`GOOGLE_CLOUD_LOCATION=global` is also supported and routes to the regionless
+endpoint.
 
-Visit the
-[Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) and
-enable the models you want to use.
-
-### 4. Configure Pi Settings
-
-**Provider Name**: This extension uses `vertex-anthropic` as the provider name.
-
-Configure your default provider and model in `~/.pi/agent/settings.json`
-(global) or `.pi/settings.json` (project-specific):
-
-```json
-{
-  "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-opus-4-7[1m]",
-  "defaultThinkingLevel": "high"
-}
-```
-
-#### Example Configurations
-
-**For maximum performance (1M context, high thinking):**
-
-```json
-{
-  "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-opus-4-7[1m]",
-  "defaultThinkingLevel": "xhigh"
-}
-```
-
-**For cost-conscious usage:**
-
-```json
-{
-  "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-haiku-4-5",
-  "defaultThinkingLevel": "low"
-}
-```
-
-**With model cycling enabled:**
-
-```json
-{
-  "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-opus-4-7[1m]",
-  "enabledModels": [
-    "vertex-anthropic/claude-opus-4-7[1m]",
-    "vertex-anthropic/claude-opus-4-6[1m]",
-    "vertex-anthropic/claude-sonnet-4-6[1m]",
-    "vertex-anthropic/claude-haiku-4-5"
-  ]
-}
-```
-
-You can then cycle through models with `Ctrl+P`.
-
-**Note**: See `examples/settings.json` for a complete configuration example.
-
-## Usage
-
-### Basic Usage
-
-Once configured in settings.json, simply run:
-
-```bash
-pi
-```
-
-Or override settings with command-line flags:
-
-```bash
-# Use Claude Opus 4.7
-pi --provider vertex-anthropic --model claude-opus-4-7
-
-# Use Claude Opus 4.6
-pi --provider vertex-anthropic --model claude-opus-4-6
-
-# Use Claude Sonnet 4.6
-pi --provider vertex-anthropic --model claude-sonnet-4-6
-
-# Use Claude Haiku 4.5
-pi --provider vertex-anthropic --model claude-haiku-4-5
-```
-
-### With 1M Context Window
-
-```bash
-# Use Claude Opus 4.7 with 1M context
-pi --provider vertex-anthropic --model claude-opus-4-7[1m]
-
-# Use Claude Opus 4.6 with 1M context
-pi --provider vertex-anthropic --model claude-opus-4-6[1m]
-
-# Use Claude Sonnet 4.6 with 1M context
-pi --provider vertex-anthropic --model claude-sonnet-4-6[1m]
-```
-
-### Thinking Levels
-
-Thinking levels are set independently from model selection:
-
-```bash
-# Set default thinking level
-pi --thinking high
-
-# Or use /thinking command during chat
-/thinking xhigh
-```
-
-### Shell Configuration
-
-Add to your shell config (~/.bashrc, ~/.zshrc, etc.):
-
-```bash
-# Required for Vertex AI authentication
-export GOOGLE_CLOUD_PROJECT=your-project-id
-export GOOGLE_CLOUD_LOCATION=your-region  # e.g., us-east5, us-central1, europe-west4
-```
-
-**Alternative environment variable names** (any of these work):
+Alternative variable names are accepted if you already use them:
 
 - Project: `GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`,
   `ANTHROPIC_VERTEX_PROJECT_ID`, `VERTEX_PROJECT_ID`
 - Location: `GOOGLE_CLOUD_LOCATION`, `CLOUD_ML_REGION`, `VERTEX_REGION`
 
-## Available Models
+For region/model availability see the
+[Vertex AI Anthropic docs](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-anthropic).
 
-### Claude Models (Anthropic)
+## Configure pi
 
-| Model ID                | Name                   | Context | Max Output | Reasoning |
-| ----------------------- | ---------------------- | ------- | ---------- | --------- |
-| `claude-opus-4-7`       | Claude Opus 4.7        | 200K    | 128K       | ✓         |
-| `claude-opus-4-7[1m]`   | Claude Opus 4.7 [1M]   | 1M      | 128K       | ✓         |
-| `claude-opus-4-6`       | Claude Opus 4.6        | 200K    | 128K       | ✓         |
-| `claude-opus-4-6[1m]`   | Claude Opus 4.6 [1M]   | 1M      | 128K       | ✓         |
-| `claude-sonnet-4-6`     | Claude Sonnet 4.6      | 200K    | 64K        | ✓         |
-| `claude-sonnet-4-6[1m]` | Claude Sonnet 4.6 [1M] | 1M      | 64K        | ✓         |
-| `claude-haiku-4-5`      | Claude Haiku 4.5       | 200K    | 64K        | ✓         |
+Edit `~/.pi/agent/settings.json` (global) or `.pi/settings.json` (per
+project):
 
-**Note**: 1M context models use the `[1m]` suffix (matching Claude Code format)
-and automatically include the required `context-1m-2025-08-07` beta header.
+```json
+{
+  "defaultProvider": "vertex-anthropic",
+  "defaultModel": "claude-opus-4-7-1m",
+  "defaultThinkingLevel": "high",
+  "enabledModels": ["vertex-anthropic/*"]
+}
+```
 
-## Regional Availability
+`enabledModels` controls the list pi cycles through with `Ctrl+P`. The
+wildcard above picks up every model this extension exposes. To enumerate
+models explicitly:
 
-Check the
-[Vertex AI documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-anthropic)
-for model availability in your region.
+```json
+{
+  "enabledModels": [
+    "vertex-anthropic/claude-opus-4-7-1m",
+    "vertex-anthropic/claude-opus-4-6-1m",
+    "vertex-anthropic/claude-sonnet-4-6-1m",
+    "vertex-anthropic/claude-haiku-4-5"
+  ]
+}
+```
 
-## Pricing
+A more complete config is in [`examples/settings.json`](examples/settings.json).
 
-Pricing follows Google Cloud Vertex AI rates. See
-[Vertex AI Pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing)
-for current rates.
+## Usage
 
-## Coming Soon
+With `defaultProvider` and `defaultModel` set, just run:
 
-- 🚀 **Gemini models** - Native Vertex AI Gemini support (`vertex-gemini`
-  provider)
-- 🤖 **OpenAI models** - When available on Vertex AI
-- 📊 **Additional partner models** - As they become available on Vertex AI
-- 📈 **Usage tracking** - Cost estimation and token usage
+```bash
+pi
+```
 
-**Current Release**: Anthropic Claude models only. Multi-model support coming in
-next major release.
+Override per invocation:
+
+```bash
+pi --provider vertex-anthropic --model claude-sonnet-4-6
+pi --provider vertex-anthropic --model claude-opus-4-7-1m --thinking xhigh
+```
+
+Thinking level can also be changed mid-session with `/thinking <level>`.
+
+## Models
+
+| Model ID               | Context | Max output | Reasoning |
+| ---------------------- | ------- | ---------- | --------- |
+| `claude-opus-4-7`      | 200K    | 128K       | yes       |
+| `claude-opus-4-7-1m`   | 1M      | 128K       | yes       |
+| `claude-opus-4-6`      | 200K    | 128K       | yes       |
+| `claude-opus-4-6-1m`   | 1M      | 128K       | yes       |
+| `claude-sonnet-4-6`    | 200K    | 64K        | yes       |
+| `claude-sonnet-4-6-1m` | 1M      | 64K        | yes       |
+| `claude-haiku-4-5`     | 200K    | 64K        | yes       |
+
+The `-1m` suffix is a pi-side label only — both variants of a model send the
+same model id to Vertex. The suffix toggles the `context-1m-2025-08-07` beta
+header and the context window pi uses for client-side bookkeeping
+(compaction, status display, etc.).
+
+This extension reports `$0` for token cost on every model. Vertex bills you
+separately from Anthropic and the rates drift, so reporting nothing is more
+honest than reporting subtly-wrong figures with confidence. Token counts
+are unaffected. Consult the official Google Vertex AI pricing
+documentation for actual rates, and use `modelOverrides` in
+`~/.pi/agent/models.json` if you want to plug your own per-model `cost`
+values back in.
 
 ## Troubleshooting
 
-### Provider not found
+**`Unknown provider "vertex-anthropic"`** — extension isn't loaded. Check
+`pi list` and reinstall if missing.
 
-If you get `Unknown provider "vertex-anthropic"`, ensure the extension is
-installed:
+**`Warning: No models match pattern "vertex-anthropic/..."`** — your
+`enabledModels` pattern doesn't match anything. The matcher is
+[minimatch](https://github.com/isaacs/minimatch), so `[`, `]`, `*`, and `?`
+are glob metacharacters. The model ids in this extension don't contain any
+of those, so plain literal patterns and `vertex-anthropic/*` both work.
 
-```bash
-pi list  # Should show the pi-vertex package
-```
+**Auth errors** — re-run `gcloud auth application-default login` and confirm
+`gcloud config get-value project` matches `GOOGLE_CLOUD_PROJECT`.
 
-### Authentication errors
+**Model access denied** — open the model in
+[Model Garden](https://console.cloud.google.com/vertex-ai/model-garden),
+enable it for your project, and wait a few minutes for propagation.
 
-Make sure you're authenticated:
-
-```bash
-gcloud auth application-default login
-gcloud config set project YOUR_PROJECT_ID
-```
-
-### Model access errors
-
-1. Visit the
-   [Model Garden](https://console.cloud.google.com/vertex-ai/model-garden)
-2. Search for "Anthropic" or "Claude"
-3. Click on the model and enable it for your project
-4. Wait a few minutes for the model to be available
-
-### Missing environment variables
-
-The extension requires these environment variables:
-
-```bash
-export GOOGLE_CLOUD_PROJECT=your-project-id
-export GOOGLE_CLOUD_LOCATION=your-region
-```
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
+**Missing env vars** — the extension logs which of
+`GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` / ADC credentials are
+missing on startup.

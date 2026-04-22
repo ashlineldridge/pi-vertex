@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Pricing
+
+- **Cost reporting is now suppressed (zeroed out) for every model.**
+  Previously each model carried a hand-coded per-million rate copied from
+  Anthropic's direct API on the assumption that Google passes those rates
+  through unchanged on Vertex. That assumption silently rotted: Opus 4.6
+  and 4.7 stayed pinned at the legacy 4.0/4.1 tier ($15 / $75 per million)
+  and over-reported costs by 3x until this release. Even with rates kept
+  current, the figures wouldn't account for Vertex's separate cache
+  pricing or the >200K-token premium tier on the 1M-context models.
+
+  Rather than ship subtly-wrong numbers, this release reports `$0` for
+  every model. Token counts still come straight from the API response, so
+  usage tracking, context-window math, and compaction all keep working;
+  only the dollar display is suppressed.
+
+  Authoritative pricing lives in Google's official Vertex AI pricing
+  documentation. If you want approximate cost tracking back, you can
+  override per-model costs in `~/.pi/agent/models.json` via
+  `modelOverrides` without forking this extension.
+
+### Breaking changes
+
+- **1M context model ids renamed from `[1m]` to `-1m` suffix.** Old:
+  `claude-opus-4-7[1m]`. New: `claude-opus-4-7-1m`. Same for `opus-4-6` and
+  `sonnet-4-6`. The brackets in the previous spelling collided with
+  [minimatch](https://github.com/isaacs/minimatch) character-class syntax
+  used by pi's `enabledModels` glob matcher: a literal pattern like
+  `"vertex-anthropic/claude-opus-4-7[1m]"` was parsed as "match a single
+  character that is `1` or `m`" and silently failed to match the actual
+  model id. Update your `~/.pi/agent/settings.json` accordingly.
+
+  On the wire nothing changes — both the `200K` and `1M` registry entries
+  send the same Vertex model id (`claude-opus-4-7`); the `-1m` suffix only
+  toggles the `context-1m-2025-08-07` beta header and the context window pi
+  tracks client-side.
+
 ### Reliability
 
 - **Mitigated upstream Anthropic SDK streaming bugs**

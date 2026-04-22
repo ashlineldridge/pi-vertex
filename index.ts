@@ -12,7 +12,7 @@
  *
  * Usage:
  *   pi --provider vertex-anthropic --model claude-opus-4-7
- *   pi --provider vertex-anthropic --model claude-opus-4-7[1m]
+ *   pi --provider vertex-anthropic --model claude-opus-4-7-1m
  */
 
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
