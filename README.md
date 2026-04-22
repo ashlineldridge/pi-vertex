@@ -61,7 +61,7 @@ project):
 ```json
 {
   "defaultProvider": "vertex-anthropic",
-  "defaultModel": "claude-opus-4-7-1m",
+  "defaultModel": "claude-opus-4-7",
   "defaultThinkingLevel": "high",
   "enabledModels": ["vertex-anthropic/*"]
 }
@@ -74,9 +74,9 @@ models explicitly:
 ```json
 {
   "enabledModels": [
-    "vertex-anthropic/claude-opus-4-7-1m",
-    "vertex-anthropic/claude-opus-4-6-1m",
-    "vertex-anthropic/claude-sonnet-4-6-1m",
+    "vertex-anthropic/claude-opus-4-7",
+    "vertex-anthropic/claude-opus-4-6",
+    "vertex-anthropic/claude-sonnet-4-6",
     "vertex-anthropic/claude-haiku-4-5"
   ]
 }
@@ -96,27 +96,25 @@ Override per invocation:
 
 ```bash
 pi --provider vertex-anthropic --model claude-sonnet-4-6
-pi --provider vertex-anthropic --model claude-opus-4-7-1m --thinking xhigh
+pi --provider vertex-anthropic --model claude-opus-4-7 --thinking xhigh
 ```
 
 Thinking level can also be changed mid-session with `/thinking <level>`.
 
 ## Models
 
-| Model ID               | Context | Max output | Reasoning |
-| ---------------------- | ------- | ---------- | --------- |
-| `claude-opus-4-7`      | 200K    | 128K       | yes       |
-| `claude-opus-4-7-1m`   | 1M      | 128K       | yes       |
-| `claude-opus-4-6`      | 200K    | 128K       | yes       |
-| `claude-opus-4-6-1m`   | 1M      | 128K       | yes       |
-| `claude-sonnet-4-6`    | 200K    | 64K        | yes       |
-| `claude-sonnet-4-6-1m` | 1M      | 64K        | yes       |
-| `claude-haiku-4-5`     | 200K    | 64K        | yes       |
+| Model ID            | Context | Max output | Reasoning |
+| ------------------- | ------- | ---------- | --------- |
+| `claude-opus-4-7`   | 1M      | 128K       | yes       |
+| `claude-opus-4-6`   | 1M      | 128K       | yes       |
+| `claude-sonnet-4-6` | 1M      | 128K       | yes       |
+| `claude-haiku-4-5`  | 200K    | 64K        | yes       |
 
-The `-1m` suffix is a pi-side label only — both variants of a model send the
-same model id to Vertex. The suffix toggles the `context-1m-2025-08-07` beta
-header and the context window pi uses for client-side bookkeeping
-(compaction, status display, etc.).
+Values are taken from Vertex's per-model spec pages under
+`cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/`.
+Unlike Anthropic's direct API, Vertex doesn't model 1M context as a
+separate `[1m]` / `-1m` variant or as a beta-header opt-in — Opus 4.6,
+Opus 4.7, and Sonnet 4.6 are documented as 1M-context models outright.
 
 This extension reports `$0` for token cost on every model. Vertex bills you
 separately from Anthropic and the rates drift, so reporting nothing is more
@@ -132,10 +130,12 @@ values back in.
 `pi list` and reinstall if missing.
 
 **`Warning: No models match pattern "vertex-anthropic/..."`** — your
-`enabledModels` pattern doesn't match anything. The matcher is
-[minimatch](https://github.com/isaacs/minimatch), so `[`, `]`, `*`, and `?`
-are glob metacharacters. The model ids in this extension don't contain any
-of those, so plain literal patterns and `vertex-anthropic/*` both work.
+`enabledModels` pattern didn't resolve. Verify the spelling against
+`pi --list-models | grep vertex-anthropic`; a literal pattern like
+`vertex-anthropic/claude-opus-4-7` must equal a row from that listing.
+Patterns from older releases that used a `-1m` or `[1m]` suffix will not
+resolve — those suffixes have been removed because Vertex doesn't model
+1M context as a separate id.
 
 **Auth errors** — re-run `gcloud auth application-default login` and confirm
 `gcloud config get-value project` matches `GOOGLE_CLOUD_PROJECT`.

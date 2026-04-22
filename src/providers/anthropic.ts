@@ -29,44 +29,32 @@ import { parse as partialParse } from "partial-json";
 
 export type AnthropicVertexModel = Model<"vertex-anthropic">;
 
-// Pricing is intentionally left at zero for every model.
+// Model registry. Every value here is sourced from Vertex's per-model spec
+// pages under https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/
+// rather than Anthropic's direct API docs. Notable Vertex-vs-Anthropic
+// differences this reflects:
 //
-// Vertex bills you (not Anthropic), and the authoritative source for actual
-// rates is Google's official Vertex AI pricing documentation (search for
-// the partner-model / Claude pricing section).
+//   - There is no separate "200K" vs "1M" model on Vertex. Opus 4.6, Opus
+//     4.7, and Sonnet 4.6 are all single 1M-context entries; the
+//     `context-1m-2025-08-07` Anthropic beta header is not documented as
+//     required (or even mentioned) on Vertex's docs.
+//   - Sonnet 4.6's documented Vertex max output is 128K, not the 64K the
+//     Anthropic-direct docs imply.
 //
-// We previously hand-mirrored Anthropic's direct rates here on the
-// assumption that Google passes them through unchanged. That assumption
-// silently rotted (Opus 4.6/4.7 stayed at the legacy 4.0/4.1 tier and
-// over-reported by 3x for months), and even when correct the numbers don't
-// account for cache-pricing differences on Vertex or the >200K-token
-// premium tier. Reporting nothing is more honest than reporting wrong
-// figures with confidence.
-//
-// Token counts still flow through correctly — they come from the API
-// response, not from this config — so usage tracking, context-window
-// math, and compaction all keep working. Only the dollar display is
-// suppressed.
-//
-// If you want approximate cost tracking, fill these in from Google's
-// pricing docs and add a calendar reminder to re-check; or override
-// per-model in your own `~/.pi/agent/models.json` via `modelOverrides`.
+// Cost is intentionally zero. Vertex bills you (not Anthropic), the
+// authoritative pricing lives in Google's Vertex AI pricing docs, and
+// hand-mirrored numbers rotted in a previous release (Opus 4.6/4.7 carried
+// the legacy 4.0/4.1 $15/$75 tier for months and over-reported by 3x).
+// Reporting `$0` is more honest than reporting a wrong figure with
+// confidence. Token counts still flow through unchanged; only the dollar
+// display is suppressed. Override per-model in `~/.pi/agent/models.json`
+// via `modelOverrides` if you want approximate cost back.
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
 const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[] = [
-  // Opus models
   {
     id: "claude-opus-4-7",
     name: "Claude Opus 4.7",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { ...ZERO_COST },
-    contextWindow: 200000,
-    maxTokens: 128000,
-  },
-  {
-    id: "claude-opus-4-7-1m",
-    name: "Claude Opus 4.7 (1M)",
     reasoning: true,
     input: ["text", "image"],
     cost: { ...ZERO_COST },
@@ -79,40 +67,18 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     reasoning: true,
     input: ["text", "image"],
     cost: { ...ZERO_COST },
-    contextWindow: 200000,
-    maxTokens: 128000,
-  },
-  {
-    id: "claude-opus-4-6-1m",
-    name: "Claude Opus 4.6 (1M)",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { ...ZERO_COST },
     contextWindow: 1000000,
     maxTokens: 128000,
   },
-
-  // Sonnet models
   {
     id: "claude-sonnet-4-6",
     name: "Claude Sonnet 4.6",
     reasoning: true,
     input: ["text", "image"],
     cost: { ...ZERO_COST },
-    contextWindow: 200000,
-    maxTokens: 64000,
-  },
-  {
-    id: "claude-sonnet-4-6-1m",
-    name: "Claude Sonnet 4.6 (1M)",
-    reasoning: true,
-    input: ["text", "image"],
-    cost: { ...ZERO_COST },
     contextWindow: 1000000,
-    maxTokens: 64000,
+    maxTokens: 128000,
   },
-
-  // Haiku models
   {
     id: "claude-haiku-4-5",
     name: "Claude Haiku 4.5",
@@ -542,10 +508,38 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 // =============================================================================
 // Reasoning / thinking configuration
 // =============================================================================
+//
+// Two thinking-config shapes are in play, and the per-model rule is set by
+// Anthropic (the Vertex Model Garden cards for these models link directly
+// to https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
+// as the canonical source for thinking semantics on Vertex):
+//
+//   1. Manual / budget-based:
+//        { type: "enabled", budget_tokens: <number> }
+//      The shape Vertex's own use-claude page documents. Works on every
+//      reasoning-capable Claude model EXCEPT Opus 4.7+, where it returns
+//      a 400 error per Anthropic's docs ("Manual extended thinking is no
+//      longer supported on Claude Opus 4.7 or later models").
+//
+//   2. Adaptive:
+//        thinking: { type: "adaptive", display: "summarized" }
+//        output_config: { effort: "low" | "medium" | "high" | "xhigh" | "max" }
+//      Required on Opus 4.7. Recommended on Opus 4.6 and Sonnet 4.6
+//      (manual still functional but deprecated). Not used on Haiku 4.5.
+//
+// The `effort` strings differ across the recommending models:
+//   - Opus 4.7 documents the top tier as `xhigh`.
+//   - Opus 4.6 documents the top tier as `max`.
+//   - Other models top out at `high`.
+//
+// We dispatch per model id below. If anyone reintroduces a model that
+// only supports manual, drop it from ADAPTIVE_THINKING_MODELS.
 
-const ADAPTIVE_THINKING_MODELS = ["opus-4-6", "opus-4-7", "sonnet-4-6"];
+// Exported for tests so a regression in this list fails the suite rather
+// than silently sending a 400 to Vertex on the next Opus 4.7 turn.
+export const ADAPTIVE_THINKING_MODELS = ["opus-4-6", "opus-4-7", "sonnet-4-6"];
 
-function supportsAdaptiveThinking(modelId: string): boolean {
+export function supportsAdaptiveThinking(modelId: string): boolean {
   return ADAPTIVE_THINKING_MODELS.some((m) => modelId.includes(m));
 }
 
@@ -578,6 +572,7 @@ function reasoningToEffort(
       return "high";
     case "xhigh":
       // Opus 4.6 calls the top tier "max"; Opus 4.7 calls it "xhigh".
+      // Anything else clamps to "high".
       if (modelId.includes("opus-4-6")) return "max";
       if (modelId.includes("opus-4-7")) return "xhigh";
       return "high";
@@ -777,26 +772,19 @@ export function streamVertexAnthropic(
       projectId,
     };
 
-    // Vertex requires the bare model id; pi exposes a `-1m` suffix to
-    // distinguish the 1M context variant. The suffix used to be `[1m]` to
-    // mirror Claude Code, but the brackets collide with minimatch character
-    // classes when users list these ids in `enabledModels`.
-    const is1M = model.id.endsWith("-1m");
-    const modelId = is1M ? model.id.slice(0, -"-1m".length) : model.id;
+    // The model id is sent to Vertex as-is. There is no Anthropic-direct
+    // `[1m]` / `-1m` suffix to strip and no `context-1m-2025-08-07` beta
+    // header to set: per Vertex's per-model spec pages, Opus 4.6/4.7 and
+    // Sonnet 4.6 simply *are* 1M-context models, with no opt-in mechanism
+    // documented. Haiku 4.5 is documented as 200K. See contextWindow on
+    // each CLAUDE_MODELS entry above.
+    const modelId = model.id;
 
-    const betaFeatures: string[] = [];
-    if (is1M) betaFeatures.push("context-1m-2025-08-07");
     // NB: We deliberately do *not* enable `fine-grained-tool-streaming-2025-05-14`.
     // That beta is what produces the malformed-JSON tool inputs reported in
     // anthropic-sdk-typescript#986 and #996. Without it, the server emits
     // tool input as a single complete JSON document, which the SDK can parse
-    // safely.
-    if (betaFeatures.length > 0) {
-      clientOptions.defaultHeaders = {
-        ...(clientOptions.defaultHeaders as Record<string, string> | undefined),
-        "anthropic-beta": betaFeatures.join(","),
-      };
-    }
+    // safely. (We don't enable any beta header by default.)
 
     if (options?.headers) {
       clientOptions.defaultHeaders = {
@@ -826,7 +814,11 @@ export function streamVertexAnthropic(
     }
 
     // Reasoning / thinking config. Temperature is incompatible with thinking,
-    // so apply it only when thinking is off.
+    // so apply it only when thinking is off. The two-shape rule lives in
+    // supportsAdaptiveThinking / reasoningToEffort / reasoningToBudget above
+    // (see the long comment block on `ADAPTIVE_THINKING_MODELS` for the
+    // citations). Opus 4.7 will 400 if we send manual config, so this
+    // dispatch is not optional.
     let thinkingEnabled = false;
     if (model.reasoning && options?.reasoning) {
       thinkingEnabled = true;

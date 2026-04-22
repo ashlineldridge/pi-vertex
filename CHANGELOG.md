@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+### Aligned with Vertex docs (breaking)
+
+Every model/API setting in this provider was previously seeded from
+Anthropic's direct API docs and pi-ai's stock `anthropic` provider, on the
+assumption that Vertex's Anthropic partner integration is a thin shim. That
+assumption is broadly true at the URL/auth layer, but several specific
+features don't pass through identically. This release re-grounds every
+user-visible setting in Vertex's per-model spec pages
+(https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/).
+
+User-visible changes:
+
+- **No more 1M-context suffix variants.** Earlier unreleased work in
+  this cycle introduced an Anthropic-Code-style `[1m]` suffix and then
+  renamed it to `-1m` after the brackets collided with minimatch glob
+  syntax in pi's `enabledModels`. Both are now gone: Vertex doesn't
+  model 1M context as a separate id or a beta-header opt-in. Opus 4.6,
+  Opus 4.7, and Sonnet 4.6 are documented as single 1M-context entries
+  on Vertex; we expose them as such and no longer send the
+  `context-1m-2025-08-07` Anthropic beta header (which isn't documented
+  as required, or mentioned, on Vertex). Any settings.json referencing
+  `claude-*-1m` or `claude-*[1m]` needs renaming to the bare id
+  (`claude-opus-4-7`, etc.).
+
+- **Sonnet 4.6 max output corrected from 64K to 128K.** Vertex's spec page
+  for `claude-sonnet-4-6` documents `Maximum output tokens: 128,000`, not
+  the 64K Anthropic-direct figure we previously carried.
+
+- **Adaptive thinking dispatch corrected.** The Vertex Model Garden cards
+  for Opus 4.6 and Opus 4.7 link to
+  https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
+  as the canonical source for thinking semantics on Vertex, and that page
+  prescribes a per-model rule:
+
+  | Model        | Manual `{ type: "enabled", budget_tokens }` | Adaptive `{ type: "adaptive" }` + effort |
+  | ------------ | -------------------------------------------- | ----------------------------------------- |
+  | Opus 4.7     | **Returns 400 error**                        | **Required**                              |
+  | Opus 4.6     | Deprecated, still functional                 | Recommended                               |
+  | Sonnet 4.6   | Deprecated, still functional                 | Recommended                               |
+  | Haiku 4.5    | Supported                                    | Not used                                  |
+
+  We dispatch accordingly: adaptive for Opus 4.6 / 4.7 / Sonnet 4.6,
+  manual for Haiku. The `xhigh` thinking level maps to effort `"xhigh"`
+  on Opus 4.7, `"max"` on Opus 4.6, and `"high"` elsewhere (per the
+  effort levels the docs accept on each model).
+
+- **Models exposed: 4 entries (down from 7).** `claude-opus-4-7`,
+  `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`. All except
+  Haiku have 1M context per the Vertex docs.
+
+No wire-format / auth changes; the Vertex SDK still injects
+`anthropic_version: "vertex-2023-10-16"` and routes to
+`/projects/{p}/locations/{r}/publishers/anthropic/models/{id}:streamRawPredict`
+as before.
+
 ### Pricing
 
 - **Cost reporting is now suppressed (zeroed out) for every model.**
@@ -22,22 +77,6 @@
   documentation. If you want approximate cost tracking back, you can
   override per-model costs in `~/.pi/agent/models.json` via
   `modelOverrides` without forking this extension.
-
-### Breaking changes
-
-- **1M context model ids renamed from `[1m]` to `-1m` suffix.** Old:
-  `claude-opus-4-7[1m]`. New: `claude-opus-4-7-1m`. Same for `opus-4-6` and
-  `sonnet-4-6`. The brackets in the previous spelling collided with
-  [minimatch](https://github.com/isaacs/minimatch) character-class syntax
-  used by pi's `enabledModels` glob matcher: a literal pattern like
-  `"vertex-anthropic/claude-opus-4-7[1m]"` was parsed as "match a single
-  character that is `1` or `m`" and silently failed to match the actual
-  model id. Update your `~/.pi/agent/settings.json` accordingly.
-
-  On the wire nothing changes — both the `200K` and `1M` registry entries
-  send the same Vertex model id (`claude-opus-4-7`); the `-1m` suffix only
-  toggles the `context-1m-2025-08-07` beta header and the context window pi
-  tracks client-side.
 
 ### Reliability
 
