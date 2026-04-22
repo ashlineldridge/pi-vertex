@@ -243,52 +243,67 @@ describe("thinking-config dispatch rule", () => {
 });
 
 describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () => {
-  // Per the Anthropic adaptive-thinking docs, `effort` availability differs:
+  // Per the effort docs (https://platform.claude.com/docs/en/build-with-claude/effort)
+  // and adaptive-thinking docs:
   //
-  //   - `max`:   Opus 4.7, Opus 4.6, Sonnet 4.6
-  //   - `xhigh`: Opus 4.7 ONLY
-  //   - `high` / `medium` / `low`: every adaptive-supporting model
+  //   Opus 4.7:   low, medium, high, xhigh, max  (5 levels)
+  //   Opus 4.6:   low, medium, high, max         (no xhigh)
+  //   Sonnet 4.6: low, medium, high, max         (no xhigh)
   //
-  // pi's `xhigh` is the user's semantic top tier. We send `xhigh` on the
-  // model that actually accepts it (Opus 4.7, name-faithful) and fall back
-  // to `max` on the others (Opus 4.6, Sonnet 4.6) so we don't 400 by
-  // sending `xhigh` to a model that doesn't take it.
+  // Mapping ships:
   //
-  // Verified live on 2026-04-23 against Vertex global endpoint: `xhigh`
-  // accepted on Opus 4.7; `max` accepted on Opus 4.7, Opus 4.6, Sonnet 4.6.
+  //   pi level | Opus 4.7   | Opus 4.6 / Sonnet 4.6
+  //   ---------|------------|-----------------------
+  //   minimal  | low        | low
+  //   low      | medium     | low
+  //   medium   | high       | medium
+  //   high     | xhigh      | high
+  //   xhigh    | max        | max
+  //
+  // Opus 4.7 "rounds up" so all 5 native efforts are reachable, including
+  // `xhigh` (the docs' recommended starting point for coding/agentic work)
+  // and `max`. Other adaptive models stay name-faithful through high and
+  // only remap pi xhigh -> max so users can still reach the top tier.
+  //
+  // Live-verified on Vertex global endpoint that every effort string in
+  // the table is accepted by its target model with no 400.
 
-  it("low / minimal -> 'low' on every model", () => {
-    for (const m of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
-      expect(reasoningToEffort("low", m)).toBe("low");
-      expect(reasoningToEffort("minimal", m)).toBe("low");
-    }
+  describe("Opus 4.7 (rounded up: 5 native efforts reachable)", () => {
+    const M = "claude-opus-4-7";
+    it("minimal -> low", () => expect(reasoningToEffort("minimal", M)).toBe("low"));
+    it("low     -> medium", () => expect(reasoningToEffort("low", M)).toBe("medium"));
+    it("medium  -> high", () => expect(reasoningToEffort("medium", M)).toBe("high"));
+    it("high    -> xhigh", () => expect(reasoningToEffort("high", M)).toBe("xhigh"));
+    it("xhigh   -> max", () => expect(reasoningToEffort("xhigh", M)).toBe("max"));
   });
 
-  it("medium -> 'medium' on every model", () => {
-    for (const m of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
-      expect(reasoningToEffort("medium", m)).toBe("medium");
-    }
+  describe("Opus 4.6 (no xhigh; name-faithful + xhigh->max)", () => {
+    const M = "claude-opus-4-6";
+    it("minimal -> low", () => expect(reasoningToEffort("minimal", M)).toBe("low"));
+    it("low     -> low", () => expect(reasoningToEffort("low", M)).toBe("low"));
+    it("medium  -> medium", () => expect(reasoningToEffort("medium", M)).toBe("medium"));
+    it("high    -> high", () => expect(reasoningToEffort("high", M)).toBe("high"));
+    it("xhigh   -> max", () => expect(reasoningToEffort("xhigh", M)).toBe("max"));
   });
 
-  it("high -> 'high' on every model", () => {
-    for (const m of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
-      expect(reasoningToEffort("high", m)).toBe("high");
-    }
+  describe("Sonnet 4.6 (no xhigh; name-faithful + xhigh->max)", () => {
+    const M = "claude-sonnet-4-6";
+    it("minimal -> low", () => expect(reasoningToEffort("minimal", M)).toBe("low"));
+    it("low     -> low", () => expect(reasoningToEffort("low", M)).toBe("low"));
+    it("medium  -> medium", () => expect(reasoningToEffort("medium", M)).toBe("medium"));
+    it("high    -> high", () => expect(reasoningToEffort("high", M)).toBe("high"));
+    it("xhigh   -> max", () => expect(reasoningToEffort("xhigh", M)).toBe("max"));
   });
 
-  it("xhigh -> 'xhigh' on Opus 4.7 (name-faithful; model supports it)", () => {
-    expect(reasoningToEffort("xhigh", "claude-opus-4-7")).toBe("xhigh");
-  });
-
-  it("xhigh -> 'max' on Opus 4.6 and Sonnet 4.6 (xhigh unsupported; max is the documented substitute)", () => {
-    expect(reasoningToEffort("xhigh", "claude-opus-4-6")).toBe("max");
-    expect(reasoningToEffort("xhigh", "claude-sonnet-4-6")).toBe("max");
-  });
-
-  it("xhigh -> 'high' as defensive fallback on unrecognized adaptive models", () => {
+  describe("defensive fallback for unrecognized adaptive models", () => {
     // A future adaptive-capable model id we haven't pinned a rule for yet
-    // shouldn't get a 400. `high` is the documented default that every
-    // adaptive model accepts.
-    expect(reasoningToEffort("xhigh", "claude-future-model-x")).toBe("high");
+    // shouldn't get a 400. Clamp xhigh to high (the documented universal
+    // default) until we add a per-model branch.
+    const M = "claude-future-model-x";
+    it("minimal -> low", () => expect(reasoningToEffort("minimal", M)).toBe("low"));
+    it("low     -> low", () => expect(reasoningToEffort("low", M)).toBe("low"));
+    it("medium  -> medium", () => expect(reasoningToEffort("medium", M)).toBe("medium"));
+    it("high    -> high", () => expect(reasoningToEffort("high", M)).toBe("high"));
+    it("xhigh   -> high (clamped, defensive)", () => expect(reasoningToEffort("xhigh", M)).toBe("high"));
   });
 });

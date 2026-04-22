@@ -561,49 +561,51 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 // Reasoning / thinking configuration
 // =============================================================================
 //
-// Two thinking-config shapes are in play, and the per-model rule is set by
-// Anthropic (the Vertex Model Garden cards for these models link directly
-// to https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking
-// and .../extended-thinking as the canonical source for thinking semantics
-// on Vertex):
+// Two thinking-config shapes are in play; per-model rules from
+// https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking
+// and .../effort:
 //
 //   1. Manual / budget-based:
 //        { type: "enabled", budget_tokens: <number> }
-//      The shape Vertex's own use-claude page documents. Works on every
-//      reasoning-capable Claude model EXCEPT Opus 4.7+, where it returns
-//      a 400 error per Anthropic's docs ("Manual extended thinking is no
-//      longer supported on Claude Opus 4.7 or later models").
+//      Works on every reasoning-capable Claude model EXCEPT Opus 4.7+,
+//      where it returns a 400 ("Manual extended thinking is no longer
+//      supported on Claude Opus 4.7 or later models").
 //
-//   2. Adaptive:
+//   2. Adaptive + effort:
 //        thinking: { type: "adaptive", display: "summarized" }
 //        output_config: { effort: "low" | "medium" | "high" | "xhigh" | "max" }
-//      Required on Opus 4.7. Recommended on Opus 4.6 and Sonnet 4.6
-//      (manual still functional on those, but adaptive is what newer
-//      models are moving to). Not used on Haiku 4.5.
+//      Required on Opus 4.7. Recommended on Opus 4.6 and Sonnet 4.6.
 //
-// Effort levels per the Anthropic adaptive-thinking docs:
-//   - `max` ("no constraints on thinking depth"):
-//         supported on Opus 4.7, Opus 4.6, Sonnet 4.6.
-//   - `xhigh` ("thinks deeply with extended exploration"):
-//         supported on Opus 4.7 ONLY.
-//   - `high` (default), `medium`, `low`: supported on all adaptive models.
+// Effort levels per model (from the effort docs):
+//   - Opus 4.7:    low, medium, high, xhigh, max  (5 levels)
+//   - Opus 4.6:    low, medium, high, max         (4 levels, no xhigh)
+//   - Sonnet 4.6:  low, medium, high, max         (4 levels, no xhigh)
+//   - Haiku 4.5:   effort not supported on Vertex (the API rejects the
+//                  field entirely, both top-level and inside output_config).
+//                  Stays on the manual budget ladder.
 //
-// `max` and `xhigh` aren't strictly ordered in the docs — they describe
-// different behaviours. `max` removes the depth ceiling; `xhigh` is
-// targeted exploration. Both work on Opus 4.7; only `max` works on the
-// other two adaptive models.
+// Mapping pi's user-facing thinking level to wire shape:
 //
-// pi's `xhigh` thinking level is its semantic top tier. We preserve the
-// user's intent name-faithfully where the model supports it, and fall
-// back to `max` where it doesn't:
+//   pi level  | Opus 4.7         | Opus 4.6 / Sonnet 4.6 | Haiku 4.5 (budget)
+//   ----------|------------------|------------------------|--------------------
+//   minimal   | effort `low`     | effort `low`           | 1024
+//   low       | effort `medium`  | effort `low`           | 4096
+//   medium    | effort `high`    | effort `medium`        | 10240
+//   high      | effort `xhigh`   | effort `high`          | 20480
+//   xhigh     | effort `max`     | effort `max`           | 32768
 //
-//   - Opus 4.7: pi xhigh -> Anthropic xhigh (model supports it)
-//   - Opus 4.6: pi xhigh -> Anthropic max  (xhigh unsupported on 4.6)
-//   - Sonnet 4.6: pi xhigh -> Anthropic max  (xhigh unsupported on Sonnet 4.6)
-//   - Anything else (defensive): pi xhigh -> Anthropic high
+// Opus 4.7 "rounds everything up" by one effort tier so all 5 native
+// effort levels are reachable from pi's 5 user levels (minimal..xhigh).
+// This preserves `xhigh` — the docs' recommended starting point for
+// Opus 4.7 coding/agentic work — and exposes `max` via pi xhigh.
 //
-// Verified live on 2026-04-23 against Vertex global endpoint: each of the
-// above effort strings is accepted with no 400 on its target model.
+// Opus 4.6 / Sonnet 4.6 keep low/medium/high name-faithful and only
+// remap pi xhigh -> max so users can reach the top tier. Pi minimal
+// collapses into effort low because these models only have 4 effort
+// levels for our 5 pi levels.
+//
+// Verified live on Vertex global endpoint that each effort string is
+// accepted with no 400 on its target model.
 //
 // We dispatch per model id below. If anyone reintroduces a model that
 // only supports manual, drop it from ADAPTIVE_THINKING_MODELS.
@@ -632,29 +634,48 @@ function reasoningToBudget(
 }
 
 // Exported for tests so a regression in this mapping fails the suite
-// rather than silently sending an unsupported effort string (e.g.
-// `xhigh` on Sonnet 4.6) and getting a 400, or under-utilizing thinking
-// (e.g. `high` on Sonnet 4.6 when `max` is available).
+// rather than silently sending an unsupported effort string and 400ing,
+// or shipping a less aggressive level than the user picked. See the
+// long comment block above for the per-model availability rule, the
+// rationale for the round-up on Opus 4.7, and citations.
 export function reasoningToEffort(
   level: NonNullable<SimpleStreamOptions["reasoning"]>,
   modelId: string,
 ): "low" | "medium" | "high" | "xhigh" | "max" {
+  // Opus 4.7: round everything up one tier so the full 5-effort range
+  // (low..max) is reachable from pi's 5 user levels (minimal..xhigh).
+  if (modelId.includes("opus-4-7")) {
+    switch (level) {
+      case "minimal": return "low";
+      case "low":     return "medium";
+      case "medium":  return "high";
+      case "high":    return "xhigh";
+      case "xhigh":   return "max";
+    }
+  }
+
+  // Opus 4.6 / Sonnet 4.6: name-faithful through high; pi xhigh is the
+  // only way to reach effort `max` (these models lack `xhigh`). Pi
+  // minimal collapses with low.
+  if (modelId.includes("opus-4-6") || modelId.includes("sonnet-4-6")) {
+    switch (level) {
+      case "minimal":
+      case "low":     return "low";
+      case "medium":  return "medium";
+      case "high":    return "high";
+      case "xhigh":   return "max";
+    }
+  }
+
+  // Defensive fallback for any future adaptive model where we don't yet
+  // know which effort levels it supports: name-faithful through high,
+  // xhigh clamped to high to avoid a 400 from sending an unsupported value.
   switch (level) {
     case "minimal":
-    case "low":
-      return "low";
-    case "medium":
-      return "medium";
+    case "low":     return "low";
+    case "medium":  return "medium";
     case "high":
-      return "high";
-    case "xhigh":
-      // Name-fidelity where the model supports it; fall back to `max`
-      // (the documented uniform top tier) where it doesn't. See the
-      // long comment block above for the per-model availability rule
-      // and citations.
-      if (modelId.includes("opus-4-7")) return "xhigh";
-      if (modelId.includes("opus-4-6") || modelId.includes("sonnet-4-6")) return "max";
-      return "high";
+    case "xhigh":   return "high";
   }
 }
 

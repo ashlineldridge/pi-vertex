@@ -29,21 +29,35 @@ User-visible changes:
   | Sonnet 4.6   | Supported                                   | Recommended                               | adaptive     |
   | Haiku 4.5    | Supported (only mode)                       | Not used                                  | manual       |
 
-  pi's `xhigh` thinking level maps to Anthropic's `effort` name-faithfully
-  where the model accepts it, falling back to `max` (the documented
-  uniform top tier on every adaptive-supporting model) where it doesn't.
-  `xhigh` is documented as Opus-4.7-only. The full mapping:
+  pi's `--thinking <level>` knob is mapped per-model so the full native
+  effort range each model supports is reachable, including `max`:
 
-  | pi level | Opus 4.7 | Opus 4.6 | Sonnet 4.6 | Other adaptive |
-  | -------- | -------- | -------- | ---------- | -------------- |
-  | `xhigh`  | `xhigh`  | `max`    | `max`      | `high`         |
-  | `high`   | `high`   | `high`   | `high`     | `high`         |
-  | `medium` | `medium` | `medium` | `medium`   | `medium`       |
-  | `low`    | `low`    | `low`    | `low`      | `low`          |
-  | `minimal`| `low`    | `low`    | `low`      | `low`          |
+  | pi level | Opus 4.7 *(round up)* | Opus 4.6 / Sonnet 4.6 | Defensive fallback |
+  | -------- | --------------------- | --------------------- | ------------------ |
+  | `minimal`| `low`                 | `low`                 | `low`              |
+  | `low`    | `medium`              | `low`                 | `low`              |
+  | `medium` | `high`                | `medium`              | `medium`           |
+  | `high`   | `xhigh`               | `high`                | `high`             |
+  | `xhigh`  | `max`                 | `max`                 | `high` (clamped)   |
 
-  Verified live on the Vertex global endpoint that each effort string is
-  accepted by its target model.
+  Per the [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort),
+  Opus 4.7 supports 5 effort levels (`low, medium, high, xhigh, max`)
+  and Opus 4.6 / Sonnet 4.6 support 4 (no `xhigh`).
+
+  - **Opus 4.7 rounds every pi level up by one tier** so all 5 native
+    efforts are reachable from pi's 5 user levels. This preserves
+    `xhigh` (the docs' recommended starting point for coding/agentic
+    work) on pi `high`, and exposes `max` on pi `xhigh`.
+  - **Opus 4.6 / Sonnet 4.6 stay name-faithful** for low/medium/high;
+    only pi `xhigh` is remapped (to `max`) so users can still reach the
+    top tier. Pi `minimal` collapses with `low` because these models
+    have 4 effort levels for our 5 pi levels.
+  - **Defensive fallback** clamps `xhigh` to `high` for unrecognized
+    future adaptive models so a 400 isn't sent when we don't yet know
+    which efforts a new model supports.
+
+  Verified live on the Vertex global endpoint that each effort string in
+  this table is accepted by its target model with no 400.
 
 - **Opt-in `-manual` model variants.** `claude-opus-4-6-manual` and
   `claude-sonnet-4-6-manual` send the manual
