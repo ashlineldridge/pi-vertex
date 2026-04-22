@@ -224,10 +224,127 @@ function convertContentBlocks(
   return blocks;
 }
 
+/**
+ * Pre-pass: repair an interrupted-session message history.
+ *
+ * When pi is stopped while a tool call is in flight (e.g. the user kills the
+ * process during a long bash command), the session file persists the
+ * assistant message that issued the tool call but never writes a matching
+ * `toolResult` message. On resume, the next entry in the history is
+ * whatever the user typed next.
+ *
+ * The Anthropic API hard-rejects this with:
+ *   "tool_use ids were found without tool_result blocks immediately after"
+ *
+ * This pass walks the history and, for every assistant turn with `toolCall`
+ * blocks whose ids are missing from the immediately following toolResult
+ * messages, appends synthetic error toolResult messages. The result is a
+ * pi-format history that satisfies the API contract.
+ *
+ * The pre-existing assistant -> toolResult* -> assistant flow is unchanged;
+ * we only touch the broken case.
+ */
+function repairInterruptedToolCalls(messages: Message[]): Message[] {
+  const repaired: Message[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    repaired.push(msg);
+
+    if (msg.role !== "assistant") continue;
+
+    const toolUseIds: string[] = [];
+    for (const block of msg.content) {
+      if (block.type === "toolCall") toolUseIds.push(block.id);
+    }
+    if (toolUseIds.length === 0) continue;
+
+    // Find which ids already have a real result in the following run of
+    // toolResult messages. We don't consume them — the main converter still
+    // walks the input list normally.
+    const seenIds = new Set<string>();
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === "toolResult") {
+      seenIds.add((messages[j] as ToolResultMessage).toolCallId);
+      j++;
+    }
+
+    // Append the real toolResult messages, then synthetic results for any
+    // tool calls that were never answered.
+    for (let k = i + 1; k < j; k++) repaired.push(messages[k]);
+    for (const id of toolUseIds) {
+      if (seenIds.has(id)) continue;
+      repaired.push({
+        role: "toolResult",
+        toolCallId: id,
+        content: [
+          {
+            type: "text",
+            text: "Tool call was interrupted before it completed (the pi session was stopped). No output was produced.",
+          },
+        ],
+        isError: true,
+        timestamp: Date.now(),
+      } as ToolResultMessage);
+    }
+
+    // Skip past the messages we've just re-emitted in the outer loop.
+    i = j - 1;
+  }
+
+  return repaired;
+}
+
+/**
+ * Post-pass: merge consecutive same-role API messages into a single message
+ * by concatenating their content blocks.
+ *
+ * The Anthropic Messages API expects user/assistant turns to alternate. In
+ * pathological histories — most notably an interrupted session where we've
+ * just injected a synthetic toolResult between an assistant turn and the
+ * user's next typed message — we can end up emitting two adjacent user
+ * messages (synthetic tool_result, then the user's text). The API accepts
+ * mixed content blocks within a single user message (text, image,
+ * tool_result), so coalescing them is both safe and the right shape.
+ *
+ * This is implemented as a defensive post-pass because the same shape can
+ * also arise from other corruption patterns (e.g. two consecutive user
+ * inputs persisted around an aborted assistant turn with empty content),
+ * and handling it once at the boundary covers all of them.
+ */
+function coalesceSameRoleMessages(params: MessageParam[]): MessageParam[] {
+  const merged: MessageParam[] = [];
+
+  for (const msg of params) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === msg.role) {
+      const lastBlocks =
+        typeof last.content === "string"
+          ? [{ type: "text" as const, text: last.content }]
+          : last.content;
+      const msgBlocks =
+        typeof msg.content === "string"
+          ? [{ type: "text" as const, text: msg.content }]
+          : msg.content;
+      merged[merged.length - 1] = {
+        ...last,
+        content: [...lastBlocks, ...msgBlocks],
+      } as MessageParam;
+    } else {
+      merged.push(msg);
+    }
+  }
+
+  return merged;
+}
+
 function convertMessages(
-  messages: Message[],
+  rawMessages: Message[],
   model: AnthropicVertexModel,
 ): MessageParam[] {
+  // Repair any interrupted tool calls before conversion. This keeps the
+  // main loop simple — it can assume every tool_use has a tool_result.
+  const messages = repairInterruptedToolCalls(rawMessages);
   const params: MessageParam[] = [];
 
   for (let i = 0; i < messages.length; i++) {
@@ -355,7 +472,10 @@ function convertMessages(
     }
   }
 
-  return params;
+  // Defensive post-pass: merge any adjacent same-role messages that slipped
+  // through (most commonly: synthetic tool_result + user's next typed text
+  // after an interrupted session). See coalesceSameRoleMessages docs.
+  return coalesceSameRoleMessages(params);
 }
 
 function convertTools(tools: Tool[]): ToolUnion[] {
