@@ -99,7 +99,9 @@ pi --provider vertex-anthropic --model claude-sonnet-4-6
 pi --provider vertex-anthropic --model claude-opus-4-7 --thinking xhigh
 ```
 
-Thinking level can also be changed mid-session with `/thinking <level>`.
+Mid-session, **`Shift+Tab`** cycles through thinking levels (`off`,
+`minimal`, `low`, `medium`, `high`, `xhigh`). `Ctrl+T` collapses or
+expands thinking-block display.
 
 ## Models
 
