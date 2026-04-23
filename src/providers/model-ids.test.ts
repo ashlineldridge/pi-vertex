@@ -306,4 +306,51 @@ describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () =
     it("high    -> high", () => expect(reasoningToEffort("high", M)).toBe("high"));
     it("xhigh   -> high (clamped, defensive)", () => expect(reasoningToEffort("xhigh", M)).toBe("high"));
   });
+
+  describe("invariant: literal Anthropic 'xhigh' effort string is Opus-4.7-only", () => {
+    // Per https://platform.claude.com/docs/en/build-with-claude/effort, the
+    // `xhigh` effort string is only accepted by Opus 4.7. Sending it to any
+    // other model would 400. This test locks the invariant: a future change
+    // that accidentally routes a non-Opus-4.7 model to `xhigh` must fail
+    // here before it ships.
+
+    it("never emits 'xhigh' for any non-Opus-4.7 model id", () => {
+      const nonOpus47 = [
+        "claude-opus-4-6",
+        "claude-opus-4-6-manual",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-6-manual",
+        "claude-haiku-4-5",
+        "claude-future-model-x",
+      ];
+      for (const model of nonOpus47) {
+        for (const level of ["minimal", "low", "medium", "high", "xhigh"] as const) {
+          expect(
+            reasoningToEffort(level, model),
+            `reasoningToEffort("${level}", "${model}")`,
+          ).not.toBe("xhigh");
+        }
+      }
+    });
+
+    it("emits 'xhigh' for exactly one (model, pi-level) pair: Opus 4.7 + pi 'high'", () => {
+      const allModels = [
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-4-6-manual",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-6-manual",
+        "claude-haiku-4-5",
+      ];
+      const cellsThatEmitXhigh: Array<[string, string]> = [];
+      for (const model of allModels) {
+        for (const level of ["minimal", "low", "medium", "high", "xhigh"] as const) {
+          if (reasoningToEffort(level, model) === "xhigh") {
+            cellsThatEmitXhigh.push([model, level]);
+          }
+        }
+      }
+      expect(cellsThatEmitXhigh).toEqual([["claude-opus-4-7", "high"]]);
+    });
+  });
 });
