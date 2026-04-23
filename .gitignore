@@ -42,3 +42,6 @@ coverage/
 # OS files
 Thumbs.db
 Desktop.ini
+# Local-only review/audit artefacts
+review.md
+review-*.md
