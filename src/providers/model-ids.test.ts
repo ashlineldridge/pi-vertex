@@ -293,14 +293,14 @@ describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () =
     it("xhigh   -> xhigh", () => expect(reasoningToEffort("xhigh", M)).toBe("xhigh"));
   });
 
-  describe("Opus 4.7 -max variant (pi xhigh -> effort max)", () => {
+  describe("Opus 4.7 -max variant (rounds every pi level up one effort tier)", () => {
     // The streaming entry point passes isMaxOverride=true when the user
     // picked the -max variant. wireModelId is the bare 'claude-opus-4-7'.
     const M = "claude-opus-4-7";
     it("minimal -> low", () => expect(reasoningToEffort("minimal", M, true)).toBe("low"));
-    it("low     -> low", () => expect(reasoningToEffort("low", M, true)).toBe("low"));
-    it("medium  -> medium", () => expect(reasoningToEffort("medium", M, true)).toBe("medium"));
-    it("high    -> high", () => expect(reasoningToEffort("high", M, true)).toBe("high"));
+    it("low     -> medium", () => expect(reasoningToEffort("low", M, true)).toBe("medium"));
+    it("medium  -> high", () => expect(reasoningToEffort("medium", M, true)).toBe("high"));
+    it("high    -> xhigh", () => expect(reasoningToEffort("high", M, true)).toBe("xhigh"));
     it("xhigh   -> max", () => expect(reasoningToEffort("xhigh", M, true)).toBe("max"));
   });
 
@@ -359,7 +359,7 @@ describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () =
       }
     });
 
-    it("emits 'xhigh' for exactly one cell: bare Opus 4.7 (isMaxOverride=false) + pi 'xhigh'", () => {
+    it("emits 'xhigh' only on Opus 4.7: bare + pi 'xhigh', and -max + pi 'high'", () => {
       const cells: Array<[string, string, boolean]> = [];
       for (const wireId of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
         for (const level of ["minimal", "low", "medium", "high", "xhigh"] as const) {
@@ -370,7 +370,10 @@ describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () =
           }
         }
       }
-      expect(cells).toEqual([["claude-opus-4-7", "xhigh", false]]);
+      expect(cells.sort()).toEqual([
+        ["claude-opus-4-7", "high", true],   // -max round-up: pi high -> effort xhigh
+        ["claude-opus-4-7", "xhigh", false], // bare name-faithful: pi xhigh -> effort xhigh
+      ]);
     });
   });
 });

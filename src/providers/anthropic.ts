@@ -614,19 +614,20 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 //   pi level  | Opus 4.7 (bare)  | Opus 4.7 (-max)  | Opus 4.6 / Sonnet 4.6 | Haiku 4.5
 //   ----------|------------------|------------------|------------------------|----------
 //   minimal   | low              | low              | low                    | budget 1024
-//   low       | low              | low              | low                    | budget 4096
-//   medium    | medium           | medium           | medium                 | budget 10240
-//   high      | high             | high             | high                   | budget 20480
+//   low       | low              | medium           | low                    | budget 4096
+//   medium    | medium           | high             | medium                 | budget 10240
+//   high      | high             | xhigh            | high                   | budget 20480
 //   xhigh     | xhigh            | max              | max                    | budget 32768
 //
 // Bare `claude-opus-4-7` is name-faithful: pi xhigh -> Anthropic effort
 // xhigh (the docs' recommended starting point for coding/agentic work).
 // `max` is unreachable from this id by design.
 //
-// `claude-opus-4-7-max` is an opt-in variant that flips just the xhigh
-// cell to send Anthropic effort `max` ("no constraints on thinking
-// depth"). Same wire model id as the bare entry; the suffix is purely a
-// pi-side switch.
+// `claude-opus-4-7-max` is an opt-in variant that rounds every pi level
+// (except minimal) up by one effort tier. All 5 native Opus 4.7 efforts
+// are reachable from pi's 5 user levels, and every cell bumps to a more
+// aggressive setting than the bare id. Pick when you want consistently
+// more thinking, not just `max` at the top tier.
 //
 // Opus 4.6 / Sonnet 4.6 have no xhigh effort tier, so their bare ids
 // already map pi xhigh -> max (no -max variant needed).
@@ -670,15 +671,24 @@ export function reasoningToEffort(
   wireModelId: string,
   isMaxOverride = false,
 ): "low" | "medium" | "high" | "xhigh" | "max" {
-  // Opus 4.7: name-faithful by default. Only the -max variant flips
-  // pi xhigh from effort xhigh to effort max.
+  // Opus 4.7: name-faithful by default. The -max variant rounds every
+  // pi level (except minimal) up by one effort tier.
   if (wireModelId.includes("opus-4-7")) {
+    if (isMaxOverride) {
+      switch (level) {
+        case "minimal": return "low";
+        case "low":     return "medium";
+        case "medium":  return "high";
+        case "high":    return "xhigh";
+        case "xhigh":   return "max";
+      }
+    }
     switch (level) {
       case "minimal":
       case "low":     return "low";
       case "medium":  return "medium";
       case "high":    return "high";
-      case "xhigh":   return isMaxOverride ? "max" : "xhigh";
+      case "xhigh":   return "xhigh";
     }
   }
 

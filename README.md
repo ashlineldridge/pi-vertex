@@ -144,13 +144,14 @@ suffix is stripped before the API call.
   adaptive. Pick this when you want a hard ceiling on thinking spend or
   reproducible per-turn token usage. Not exposed for Opus 4.7 (manual
   returns 400) or Haiku 4.5 (already manual).
-- **`-max`** (Opus 4.7 only): pi `xhigh` maps to Anthropic effort `max`
-  instead of effort `xhigh`. Pick this when you want "no constraints on
-  thinking depth." Bare `claude-opus-4-7` keeps `xhigh` reachable as the
-  recommended starting point for coding/agentic work; the `-max`
-  variant trades that for `max` access. Not needed on Opus 4.6 or
-  Sonnet 4.6: those models have no `xhigh` effort tier, so their bare
-  ids already map pi `xhigh → max`.
+- **`-max`** (Opus 4.7 only): rounds every pi level (except `minimal`)
+  up by one effort tier. Bare `claude-opus-4-7` is name-faithful (pi
+  `medium` → effort `medium`, etc.); the `-max` variant is consistently
+  more aggressive (pi `medium` → effort `high`, pi `xhigh` → effort
+  `max`, etc.). Pick this when you want every level to do more thinking,
+  not just `max` at the top. Not needed on Opus 4.6 or Sonnet 4.6:
+  those models have no `xhigh` effort tier, so their bare ids already
+  map pi `xhigh → max`.
 
 #### Effort mapping
 
@@ -159,9 +160,9 @@ pi's `--thinking <level>` maps per-model:
 | pi level | Opus 4.7 (bare) | Opus 4.7 (-max) | Opus 4.6 / Sonnet 4.6 | Haiku 4.5 (budget) |
 | -------- | --------------- | --------------- | --------------------- | ------------------ |
 | `minimal`| `low`           | `low`           | `low`                 | 1024               |
-| `low`    | `low`           | `low`           | `low`                 | 4096               |
-| `medium` | `medium`        | `medium`        | `medium`              | 10240              |
-| `high`   | `high`          | `high`          | `high`                | 20480              |
+| `low`    | `low`           | `medium`        | `low`                 | 4096               |
+| `medium` | `medium`        | `high`          | `medium`              | 10240              |
+| `high`   | `high`          | `xhigh`         | `high`                | 20480              |
 | `xhigh`  | `xhigh`         | `max`           | `max`                 | 32768              |
 
 The `-manual` variants of Opus 4.6 / Sonnet 4.6 use the same budget

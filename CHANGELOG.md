@@ -39,9 +39,9 @@ User-visible changes:
   | pi level | Opus 4.7 (bare) | Opus 4.7 (-max) | Opus 4.6 / Sonnet 4.6 | Haiku 4.5 |
   | -------- | --------------- | --------------- | --------------------- | --------- |
   | `minimal`| `low`           | `low`           | `low`                 | 1024 budget |
-  | `low`    | `low`           | `low`           | `low`                 | 4096 budget |
-  | `medium` | `medium`        | `medium`        | `medium`              | 10240 budget |
-  | `high`   | `high`          | `high`          | `high`                | 20480 budget |
+  | `low`    | `low`           | `medium`        | `low`                 | 4096 budget |
+  | `medium` | `medium`        | `high`          | `medium`              | 10240 budget |
+  | `high`   | `high`          | `xhigh`         | `high`                | 20480 budget |
   | `xhigh`  | `xhigh`         | `max`           | `max`                 | 32768 budget |
 
   Verified live on the Vertex global endpoint that each effort string
@@ -65,11 +65,13 @@ User-visible changes:
     adaptive. Pick when you want a hard ceiling on thinking spend or
     reproducible per-turn token usage. Not exposed for Opus 4.7
     (manual returns 400) or Haiku 4.5 (already manual).
-  - **`-max`** (`claude-opus-4-7-max`): pi `xhigh` maps to Anthropic
-    effort `max` instead of effort `xhigh`. Bare `claude-opus-4-7`
-    keeps `xhigh` reachable; this variant trades it for `max` access.
-    Not needed on Opus 4.6 / Sonnet 4.6 (their bare ids already map
-    pi `xhigh → max` because they have no native `xhigh` tier).
+  - **`-max`** (`claude-opus-4-7-max`): rounds every pi level (except
+    `minimal`) up by one effort tier. Bare `claude-opus-4-7` stays
+    name-faithful; the `-max` variant is consistently more aggressive
+    (pi `medium` → effort `high`, pi `xhigh` → effort `max`, etc.).
+    All 5 native Opus 4.7 efforts are reachable. Not needed on Opus
+    4.6 / Sonnet 4.6 (their bare ids already map pi `xhigh → max`
+    because they have no native `xhigh` tier).
 
 - **Models exposed: 7 entries.** `claude-opus-4-7`,
   `claude-opus-4-7-max`, `claude-opus-4-6`, `claude-opus-4-6-manual`,
