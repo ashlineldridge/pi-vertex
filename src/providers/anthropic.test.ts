@@ -1,101 +1,26 @@
 /**
  * Tests for the interrupted-session repair behaviour in convertMessages.
  *
- * convertMessages is not exported, so we exercise it indirectly: we import
- * the module and use a small re-export shim. To keep this self-contained
- * without changing the public API, the test uses the same in-file helpers
- * via dynamic import + a private accessor pattern would be brittle, so we
- * re-implement the smallest possible fixture and assert on the *shape* of
- * the params that streamVertexAnthropic would build.
- *
- * The real assertion is structural: given a session history with a
- * dangling tool_use (the exact pattern from the broken 2de17775 session),
- * the converted Anthropic params must:
+ * Given a session history with a dangling tool_use (the exact pattern
+ * from the broken 2de17775 session), the converted Anthropic params must:
  *   1. Contain no assistant tool_use without a following tool_result.
  *   2. Have strictly alternating user/assistant roles.
  *   3. Carry the user's follow-up text in the same user message that
  *      contains the synthetic tool_result.
+ *
+ * Both helpers are exported from the production module so the assertions
+ * below run against real production code, not test-local copies.
  */
 import { describe, expect, it } from "vitest";
 import type { Message } from "@mariozechner/pi-ai";
-
-// Re-export shim: pull the private helpers via the module's source so we
-// can test them directly. We import the file path (not the package) to
-// avoid resolving through the package's "main" field.
-import * as anthropicModule from "./anthropic.js";
-
-// The functions under test are not exported from the module. To test them
-// without changing the production API surface, we re-import the file as
-// text and eval the helpers in isolation. This is heavier than ideal but
-// lets us assert correctness without exposing internals.
-//
-// Simpler approach: copy the helper logic verbatim here for the test, then
-// also smoke-test that the public stream entry point exists. That keeps
-// the test focused and avoids brittle reflection.
-function repairInterruptedToolCalls(messages: Message[]): Message[] {
-  const repaired: Message[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    repaired.push(msg);
-    if (msg.role !== "assistant") continue;
-
-    const toolUseIds: string[] = [];
-    for (const block of msg.content) {
-      if (block.type === "toolCall") toolUseIds.push(block.id);
-    }
-    if (toolUseIds.length === 0) continue;
-
-    const seenIds = new Set<string>();
-    let j = i + 1;
-    while (j < messages.length && messages[j].role === "toolResult") {
-      seenIds.add((messages[j] as any).toolCallId);
-      j++;
-    }
-
-    for (let k = i + 1; k < j; k++) repaired.push(messages[k]);
-    for (const id of toolUseIds) {
-      if (seenIds.has(id)) continue;
-      repaired.push({
-        role: "toolResult",
-        toolCallId: id,
-        content: [
-          {
-            type: "text",
-            text: "Tool call was interrupted before it completed (the pi session was stopped). No output was produced.",
-          },
-        ],
-        isError: true,
-        timestamp: Date.now(),
-      } as any);
-    }
-    i = j - 1;
-  }
-  return repaired;
-}
-
-function coalesceSameRoleMessages(params: any[]): any[] {
-  const merged: any[] = [];
-  for (const msg of params) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === msg.role) {
-      const lastBlocks =
-        typeof last.content === "string"
-          ? [{ type: "text", text: last.content }]
-          : last.content;
-      const msgBlocks =
-        typeof msg.content === "string"
-          ? [{ type: "text", text: msg.content }]
-          : msg.content;
-      merged[merged.length - 1] = {
-        ...last,
-        content: [...lastBlocks, ...msgBlocks],
-      };
-    } else {
-      merged.push(msg);
-    }
-  }
-  return merged;
-}
+import {
+  coalesceSameRoleMessages,
+  looksLikeStreamingJsonBug,
+  mapStopReason,
+  repairInterruptedToolCalls,
+  streamVertexAnthropic,
+  anthropicModels,
+} from "./anthropic.js";
 
 describe("interrupted-session repair (mirrors session 2de17775)", () => {
   it("repairs an assistant tool_use that has no following tool_result", () => {
@@ -232,16 +157,16 @@ describe("interrupted-session repair (mirrors session 2de17775)", () => {
         ],
       },
       { role: "user", content: [{ type: "text", text: "follow up" }] },
-    ];
+    ] as any;
 
     const merged = coalesceSameRoleMessages(params);
 
     expect(merged).toHaveLength(2);
     expect(merged[0].role).toBe("assistant");
     expect(merged[1].role).toBe("user");
-    expect(merged[1].content).toHaveLength(2);
-    expect(merged[1].content[0].type).toBe("tool_result");
-    expect(merged[1].content[1].type).toBe("text");
+    expect((merged[1].content as any[]).length).toBe(2);
+    expect((merged[1].content as any[])[0].type).toBe("tool_result");
+    expect((merged[1].content as any[])[1].type).toBe("text");
   });
 
   it("leaves an already-alternating params array untouched", () => {
@@ -249,13 +174,70 @@ describe("interrupted-session repair (mirrors session 2de17775)", () => {
       { role: "user", content: "hello" },
       { role: "assistant", content: [{ type: "text", text: "hi" }] },
       { role: "user", content: "thanks" },
-    ];
+    ] as any;
     const merged = coalesceSameRoleMessages(params);
     expect(merged).toEqual(params);
   });
 
   it("module exports the public streaming entry point", () => {
-    expect(typeof anthropicModule.streamVertexAnthropic).toBe("function");
-    expect(typeof anthropicModule.anthropicModels).toBe("function");
+    expect(typeof streamVertexAnthropic).toBe("function");
+    expect(typeof anthropicModels).toBe("function");
+  });
+});
+
+describe("mapStopReason: Anthropic stop_reason -> pi StopReason", () => {
+  // Pinned so a future Anthropic stop_reason addition that accidentally
+  // falls through to the default "stop" branch is visible in test output
+  // rather than silent on the wire. If you add a new explicit case in
+  // production, add a row here too.
+  it("maps end_turn / stop_sequence / pause_turn -> 'stop'", () => {
+    expect(mapStopReason("end_turn")).toBe("stop");
+    expect(mapStopReason("stop_sequence")).toBe("stop");
+    expect(mapStopReason("pause_turn")).toBe("stop");
+  });
+  it("maps max_tokens -> 'length'", () => {
+    expect(mapStopReason("max_tokens")).toBe("length");
+  });
+  it("maps tool_use -> 'toolUse'", () => {
+    expect(mapStopReason("tool_use")).toBe("toolUse");
+  });
+  it("maps refusal / sensitive -> 'error'", () => {
+    expect(mapStopReason("refusal")).toBe("error");
+    expect(mapStopReason("sensitive")).toBe("error");
+  });
+  it("defaults unknown / null / undefined to 'stop' (defensive)", () => {
+    expect(mapStopReason(null)).toBe("stop");
+    expect(mapStopReason(undefined)).toBe("stop");
+    expect(mapStopReason("some_future_value")).toBe("stop");
+  });
+});
+
+describe("looksLikeStreamingJsonBug: heuristic for retrying streaming failures", () => {
+  // The streaming entry point catches errors during the SSE iteration and
+  // retries the request as non-streaming if the error message looks like
+  // an SDK JSON-parse bug (anthropic-sdk-typescript #986 / #996). If
+  // upstream changes the wording of those exceptions, this heuristic
+  // stops firing and we silently lose the retry. These tests pin each
+  // wording variant we know about; add new ones here when seen.
+
+  it("matches the wording variants from #986 / #996", () => {
+    expect(looksLikeStreamingJsonBug("Unexpected token } in JSON at position 42")).toBe(true);
+    expect(looksLikeStreamingJsonBug("Bad escaped character")).toBe(true);
+    expect(looksLikeStreamingJsonBug("partial-json: bad escape")).toBe(true);
+    expect(looksLikeStreamingJsonBug("partial_json: malformed")).toBe(true);
+    expect(looksLikeStreamingJsonBug("JSON.parse failed: Unexpected character")).toBe(true);
+    expect(looksLikeStreamingJsonBug("Unrecognised escape sequence")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(looksLikeStreamingJsonBug("BAD ESCAPED CHAR")).toBe(true);
+    expect(looksLikeStreamingJsonBug("json error")).toBe(true);
+  });
+
+  it("does not match unrelated errors", () => {
+    expect(looksLikeStreamingJsonBug("connection reset by peer")).toBe(false);
+    expect(looksLikeStreamingJsonBug("401 Unauthorized")).toBe(false);
+    expect(looksLikeStreamingJsonBug("context window exceeded")).toBe(false);
+    expect(looksLikeStreamingJsonBug("")).toBe(false);
   });
 });

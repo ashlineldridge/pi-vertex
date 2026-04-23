@@ -49,12 +49,14 @@ User-visible changes:
 
   **Known upstream limitation:** pi-coding-agent uses pi-ai's
   `supportsXhigh()` to decide whether the `xhigh` level is available
-  for a given model. As of pi-ai 0.68, Sonnet 4.6 and Haiku 4.5 are
-  not in that list, so pi clamps `xhigh → high` before this extension
+  for a given model. As of current upstream pi-ai, Sonnet 4.6 and
+  Haiku 4.5 are not in that list, so pi clamps `xhigh → high` when
+  launching with `--thinking xhigh` on the CLI, before this extension
   is called. The `xhigh` row above for those two models therefore
-  behaves as if `--thinking high` had been specified until pi-ai
-  broadens the list. Opus 4.7 (both bare and `-max`) and Opus 4.6 are
-  unaffected.
+  behaves as if `--thinking high` had been specified at startup until
+  pi-ai broadens the list. Opus 4.7 (both bare and `-max`) and Opus
+  4.6 are unaffected. Mid-session `Shift+Tab` cycling behaviour for
+  Sonnet 4.6 / Haiku 4.5 + xhigh is not independently verified.
 
 - **Opt-in suffix variants.** Both suffixes flip one specific per-model
   behaviour. Same wire model id as the bare entry (suffix stripped

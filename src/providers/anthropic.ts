@@ -312,7 +312,8 @@ function convertContentBlocks(
  * The pre-existing assistant -> toolResult* -> assistant flow is unchanged;
  * we only touch the broken case.
  */
-function repairInterruptedToolCalls(messages: Message[]): Message[] {
+// Exported for tests; not part of the package's public API.
+export function repairInterruptedToolCalls(messages: Message[]): Message[] {
   const repaired: Message[] = [];
 
   for (let i = 0; i < messages.length; i++) {
@@ -380,7 +381,8 @@ function repairInterruptedToolCalls(messages: Message[]): Message[] {
  * inputs persisted around an aborted assistant turn with empty content),
  * and handling it once at the boundary covers all of them.
  */
-function coalesceSameRoleMessages(params: MessageParam[]): MessageParam[] {
+// Exported for tests; not part of the package's public API.
+export function coalesceSameRoleMessages(params: MessageParam[]): MessageParam[] {
   const merged: MessageParam[] = [];
 
   for (const msg of params) {
@@ -564,7 +566,8 @@ function convertTools(tools: Tool[]): ToolUnion[] {
   });
 }
 
-function mapStopReason(reason: string | null | undefined): StopReason {
+// Exported for tests; not part of the package's public API.
+export function mapStopReason(reason: string | null | undefined): StopReason {
   switch (reason) {
     case "end_turn":
     case "stop_sequence":
@@ -578,10 +581,25 @@ function mapStopReason(reason: string | null | undefined): StopReason {
     case "sensitive":
       return "error";
     default:
-      // Unknown stop reasons are treated as a normal stop rather than throwing,
-      // so a future API addition doesn't break the turn.
+      // Unknown stop reasons are treated as a normal stop rather than
+      // throwing, so a future API addition doesn't break the turn. The
+      // `mapStopReason` test pins the known cases so a regression that
+      // accidentally lands in this default branch is easy to spot when
+      // the suite drift between Anthropic's documented stop_reasons and
+      // ours grows.
       return "stop";
   }
+}
+
+// Exported for tests. Heuristic match on the SDK's error message text used
+// to decide whether to retry a streaming failure as a non-streaming call.
+// Anthropic SDK bugs #986 / #996 surface as JSON.parse / partialParse
+// throws; retrying without `stream: true` exercises a different SDK code
+// path that doesn't trigger the buggy `partialParse` helper. If upstream
+// rewords its JSON-parse errors in a future release, this heuristic must
+// be updated or the retry stops firing.
+export function looksLikeStreamingJsonBug(errorMessage: string): boolean {
+  return /JSON|Unexpected|escape|partial[_-]?json|Bad escaped/i.test(errorMessage);
 }
 
 // =============================================================================
@@ -653,6 +671,11 @@ function reasoningToBudget(
     high: 20480,
     xhigh: 32768,
   };
+  // pi-ai's `ThinkingBudgets` type is `{ minimal?, low?, medium?, high? }`
+  // — no `xhigh` slot. When the user picks pi `xhigh` and has supplied
+  // a `thinkingBudgets` override, we fall back to their `high` override
+  // (the closest available key) before our default. If pi-ai later adds
+  // `xhigh` to ThinkingBudgets, prefer that.
   if (level === "xhigh") return custom?.high ?? defaults.xhigh;
   return custom?.[level] ?? defaults[level];
 }
@@ -706,9 +729,19 @@ export function reasoningToEffort(
     }
   }
 
-  // Defensive fallback for any future adaptive model where we don't yet
-  // know which effort levels it supports: name-faithful through high,
-  // xhigh clamped to high to avoid a 400 from sending an unsupported value.
+  // Partial-edit guard: this fallback is only reachable if a future
+  // contributor adds an id to ADAPTIVE_THINKING_MODELS without also
+  // adding a per-model branch above. The dispatch in
+  // `streamVertexAnthropic` only calls us when supportsAdaptiveThinking
+  // returned true, so any unrecognised wireModelId here is a
+  // configuration mistake. Warn loudly and return a safe value
+  // (high is documented as available on every adaptive Claude model;
+  // xhigh is Opus-4.7-only and would 400 elsewhere).
+  console.warn(
+    `[pi-vertex] reasoningToEffort: unrecognised adaptive wireModelId "${wireModelId}" — ` +
+      `add a per-model branch in reasoningToEffort or remove the id from ` +
+      `ADAPTIVE_THINKING_MODELS. Falling back to safe effort levels.`,
+  );
   switch (level) {
     case "minimal":
     case "low":     return "low";
@@ -967,6 +1000,10 @@ export function streamVertexAnthropic(
       thinkingEnabled = true;
       if (!isManualOverride && supportsAdaptiveThinking(modelId)) {
         const effort = reasoningToEffort(options.reasoning, modelId, isMaxOverride);
+        // `display: "summarized"` is required so thinking blocks come
+        // back populated on Opus 4.7, where Anthropic silently changed
+        // the default from "summarized" (4.6) to "omitted" (4.7). Without
+        // this, Opus 4.7 thinking blocks would be empty.
         (baseParams as any).thinking = { type: "adaptive", display: "summarized" };
         (baseParams as any).output_config = { effort };
       } else {
@@ -1024,7 +1061,6 @@ export function streamVertexAnthropic(
     // -------------------------------------------------------------------------
     let streamingError: unknown = null;
     let startEmitted = false;
-    let producedAnyEvent = false;
 
     try {
       const streamingParams: MessageCreateParamsStreaming = {
@@ -1040,8 +1076,6 @@ export function streamVertexAnthropic(
       startEmitted = true;
 
       for await (const event of messageStream) {
-        producedAnyEvent = true;
-
         if (event.type === "message_start") {
           output.responseId = event.message.id;
           applyUsage(event.message.usage);
@@ -1227,9 +1261,7 @@ export function streamVertexAnthropic(
         : String(streamingError);
 
     const isAborted = options?.signal?.aborted;
-    const looksLikeJsonParseBug =
-      !isAborted &&
-      /JSON|Unexpected|escape|partial[_-]?json|Bad escaped/i.test(errorMessage);
+    const looksLikeJsonParseBug = !isAborted && looksLikeStreamingJsonBug(errorMessage);
 
     if (isAborted) {
       stripScratch();
@@ -1306,10 +1338,6 @@ export function streamVertexAnthropic(
       stream.end();
     }
 
-    // Suppress unused-var warning; `producedAnyEvent` is kept for future
-    // diagnostics if we want to differentiate "failed before any data" vs
-    // "failed mid-stream".
-    void producedAnyEvent;
   })();
 
   return stream;

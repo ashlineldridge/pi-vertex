@@ -4,7 +4,7 @@
 
 # Set required environment variables
 export GOOGLE_CLOUD_PROJECT=your-project-id
-export GOOGLE_CLOUD_LOCATION=your-region  # e.g., us-east5, us-central1, europe-west4
+export GOOGLE_CLOUD_LOCATION=your-region  # e.g., global (recommended), us-east5, europe-west1, asia-southeast1
 
 # Method 1: Using command-line flags
 pi --provider vertex-anthropic --model claude-opus-4-7 "Explain the concept of recursion"

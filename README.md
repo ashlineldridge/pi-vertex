@@ -171,13 +171,17 @@ ladder as Haiku.
 #### Known limitation: `xhigh` is clamped on some models upstream
 
 pi-coding-agent uses pi-ai's [`supportsXhigh()`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/models.ts)
-to decide which thinking levels are available per model. As of
-pi-ai 0.68, Sonnet 4.6 and Haiku 4.5 are not in that list, so pi clamps
-`xhigh → high` *before* this extension is called. Net effect: the
-`xhigh` row above for Sonnet 4.6 and Haiku 4.5 currently behaves as
-if `--thinking high` had been specified. Opus 4.7 (both bare and `-max`)
-and Opus 4.6 are unaffected. Fix requires a pi-ai release that broadens
-`supportsXhigh()`.
+to decide which thinking levels are available per model. As of upstream
+pi-ai, Sonnet 4.6 and Haiku 4.5 are not in that list, so pi clamps
+`xhigh → high` when launching with `--thinking xhigh` on the CLI,
+before this extension is called. Net effect: the `xhigh` row above for
+Sonnet 4.6 and Haiku 4.5 currently behaves as if `--thinking high` had
+been specified at startup. Opus 4.7 (both bare and `-max`) and Opus 4.6
+are unaffected. Fix requires a pi-ai release that broadens
+`supportsXhigh()`. Mid-session behaviour (e.g. `Shift+Tab` cycling onto
+`xhigh`) hasn't been independently verified — if you observe a 400
+response from Vertex when cycling thinking levels on Sonnet 4.6 or
+Haiku 4.5, please file an issue.
 
 ### Cost
 
