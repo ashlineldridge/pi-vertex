@@ -29,69 +29,51 @@ User-visible changes:
   | Sonnet 4.6   | Supported                                   | Recommended                               | adaptive     |
   | Haiku 4.5    | Supported (only mode)                       | Not used                                  | manual       |
 
-  pi's `--thinking <level>` knob is mapped per-model so the full native
-  effort range each model supports is reachable, including `max`:
+  pi's `--thinking <level>` is mapped per-model. Bare ids stay
+  name-faithful where Anthropic supports the matching effort string;
+  `xhigh` falls back to `max` on models that don't have a native
+  `xhigh` tier (Opus 4.6 / Sonnet 4.6). Opus 4.7 keeps `xhigh`
+  reachable on its bare id and adds a `-max` variant for users who
+  want `max` instead.
 
-  | pi level | Opus 4.7 *(round up)* | Opus 4.6 / Sonnet 4.6 | Defensive fallback |
-  | -------- | --------------------- | --------------------- | ------------------ |
-  | `minimal`| `low`                 | `low`                 | `low`              |
-  | `low`    | `medium`              | `low`                 | `low`              |
-  | `medium` | `high`                | `medium`              | `medium`           |
-  | `high`   | `xhigh`               | `high`                | `high`             |
-  | `xhigh`  | `max`                 | `max`                 | `high` (clamped)   |
+  | pi level | Opus 4.7 (bare) | Opus 4.7 (-max) | Opus 4.6 / Sonnet 4.6 | Haiku 4.5 |
+  | -------- | --------------- | --------------- | --------------------- | --------- |
+  | `minimal`| `low`           | `low`           | `low`                 | 1024 budget |
+  | `low`    | `low`           | `low`           | `low`                 | 4096 budget |
+  | `medium` | `medium`        | `medium`        | `medium`              | 10240 budget |
+  | `high`   | `high`          | `high`          | `high`                | 20480 budget |
+  | `xhigh`  | `xhigh`         | `max`           | `max`                 | 32768 budget |
 
-  Per the [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort),
-  Opus 4.7 supports 5 effort levels (`low, medium, high, xhigh, max`)
-  and Opus 4.6 / Sonnet 4.6 support 4 (no `xhigh`).
-
-  - **Opus 4.7 rounds every pi level up by one tier** so all 5 native
-    efforts are reachable from pi's 5 user levels. This preserves
-    `xhigh` (the docs' recommended starting point for coding/agentic
-    work) on pi `high`, and exposes `max` on pi `xhigh`.
-  - **Opus 4.6 / Sonnet 4.6 stay name-faithful** for low/medium/high;
-    only pi `xhigh` is remapped (to `max`) so users can still reach the
-    top tier. Pi `minimal` collapses with `low` because these models
-    have 4 effort levels for our 5 pi levels.
-  - **Defensive fallback** clamps `xhigh` to `high` for unrecognized
-    future adaptive models so a 400 isn't sent when we don't yet know
-    which efforts a new model supports.
-
-  Verified live on the Vertex global endpoint that each effort string in
-  this table is accepted by its target model with no 400.
+  Verified live on the Vertex global endpoint that each effort string
+  in this table is accepted by its target model with no 400.
 
   **Known upstream limitation:** pi-coding-agent uses pi-ai's
   `supportsXhigh()` to decide whether the `xhigh` level is available
-  for a given model. That function (as of pi-ai 0.68) only recognizes
-  Opus 4.6, Opus 4.7, and GPT-5.x. Sonnet 4.6 and Haiku 4.5 are not
-  listed, so pi clamps `xhigh → high` before this extension is called.
-  The mapping above for `xhigh` on Sonnet 4.6 and Haiku 4.5 is
-  therefore unreachable in normal pi usage:
+  for a given model. As of pi-ai 0.68, Sonnet 4.6 and Haiku 4.5 are
+  not in that list, so pi clamps `xhigh → high` before this extension
+  is called. The `xhigh` row above for those two models therefore
+  behaves as if `--thinking high` had been specified until pi-ai
+  broadens the list. Opus 4.7 (both bare and `-max`) and Opus 4.6 are
+  unaffected.
 
-  - `claude-sonnet-4-6` + `--thinking xhigh` → wire sends `effort: high`
-    (not `max`).
-  - `claude-haiku-4-5` + `--thinking xhigh` → wire sends
-    `budget_tokens: 20480` (not 32768).
-  - Same for `claude-sonnet-4-6-manual`.
+- **Opt-in suffix variants.** Both suffixes flip one specific per-model
+  behaviour. Same wire model id as the bare entry (suffix stripped
+  before the API call).
 
-  Fix requires a one-line broadening of pi-ai's `supportsXhigh()` to
-  include `sonnet-4-6` and `haiku-4-5`. Until that lands upstream, the
-  affected combinations behave as if `--thinking high` had been
-  specified. The extension's mapping is correct — the clamp happens
-  before our `streamSimple` is invoked and we have no hook to override
-  it.
+  - **`-manual`** (`claude-opus-4-6-manual`, `claude-sonnet-4-6-manual`):
+    force manual `{ type: "enabled", budget_tokens }` thinking instead of
+    adaptive. Pick when you want a hard ceiling on thinking spend or
+    reproducible per-turn token usage. Not exposed for Opus 4.7
+    (manual returns 400) or Haiku 4.5 (already manual).
+  - **`-max`** (`claude-opus-4-7-max`): pi `xhigh` maps to Anthropic
+    effort `max` instead of effort `xhigh`. Bare `claude-opus-4-7`
+    keeps `xhigh` reachable; this variant trades it for `max` access.
+    Not needed on Opus 4.6 / Sonnet 4.6 (their bare ids already map
+    pi `xhigh → max` because they have no native `xhigh` tier).
 
-- **Opt-in `-manual` model variants.** `claude-opus-4-6-manual` and
-  `claude-sonnet-4-6-manual` send the manual
-  `{ type: "enabled", budget_tokens: N }` thinking shape instead of the
-  adaptive default. Same wire model id as their bare counterpart — the
-  suffix is purely a pi-side switch. Use these for predictable cost or
-  reproducible per-turn token spend. No `-manual` variant for Opus 4.7
-  (would 400) or Haiku 4.5 (already manual on its bare entry).
-
-- **Models exposed: 6 entries.** `claude-opus-4-7`, `claude-opus-4-6`,
-  `claude-opus-4-6-manual`, `claude-sonnet-4-6`,
-  `claude-sonnet-4-6-manual`, `claude-haiku-4-5`. All Opus and Sonnet
-  entries have 1M context per the Vertex docs.
+- **Models exposed: 7 entries.** `claude-opus-4-7`,
+  `claude-opus-4-7-max`, `claude-opus-4-6`, `claude-opus-4-6-manual`,
+  `claude-sonnet-4-6`, `claude-sonnet-4-6-manual`, `claude-haiku-4-5`.
 
 No wire-format / auth changes; the Vertex SDK still injects
 `anthropic_version: "vertex-2023-10-16"` and routes to

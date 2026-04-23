@@ -101,16 +101,10 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     maxTokens: 64000,
   },
 
-  // -manual variants: opt-in to manual `{ type: "enabled", budget_tokens: N }`
-  // thinking instead of the default adaptive shape. The same wire model id
-  // is sent to Vertex (the suffix is stripped before the API call). Use
-  // these when you need a hard ceiling on thinking spend or reproducible
-  // per-turn token usage.
-  //
-  // Anthropic is moving newer models toward adaptive thinking as the
-  // primary mode: Opus 4.6 and Sonnet 4.6 still accept manual but
-  // recommend adaptive; Opus 4.7 only accepts adaptive (manual returns
-  // 400). We don't expose a -manual variant for Opus 4.7 (would 400) or
+  // -manual variants: opt-in to manual `{ type: "enabled", budget_tokens }`
+  // thinking instead of the default adaptive shape. Use for hard ceilings
+  // on thinking spend or reproducible per-turn token usage. Same wire id
+  // as the bare entry. Not exposed for Opus 4.7 (manual returns 400) or
   // Haiku 4.5 (already manual-only on its bare entry).
   {
     id: "claude-opus-4-6-manual",
@@ -130,16 +124,49 @@ const CLAUDE_MODELS: Omit<AnthropicVertexModel, "api" | "provider" | "baseUrl">[
     contextWindow: 1000000,
     maxTokens: 128000,
   },
+
+  // -max variant for Opus 4.7 only: pi `xhigh` maps to Anthropic effort
+  // `max` instead of effort `xhigh`. Bare `claude-opus-4-7` is
+  // name-faithful (pi xhigh -> effort xhigh, the docs' recommended
+  // starting point for coding/agentic work). Pick this variant when you
+  // want the docs' "no constraints on thinking depth" behaviour. Other
+  // adaptive models don't need a -max variant: they have no `xhigh`
+  // effort tier, so their bare ids already map pi xhigh -> max.
+  {
+    id: "claude-opus-4-7-max",
+    name: "Claude Opus 4.7 (max effort)",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { ...ZERO_COST },
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  },
 ];
 
-// Exported for tests and for the streaming entry point. Strips the `-manual`
-// suffix (if present) from a pi-side model id to recover the bare Vertex
-// publisher model id, and reports whether the suffix was present.
-export function deriveWireModelId(modelId: string): { wireId: string; isManualOverride: boolean } {
+// Exported for tests and for the streaming entry point. Strips pi-side
+// suffix flags (`-manual`, `-max`) from a registry id to recover the bare
+// Vertex publisher model id, and reports which flags were present. The
+// two flags are mutually exclusive in the registry today.
+export function deriveWireModelId(modelId: string): {
+  wireId: string;
+  isManualOverride: boolean;
+  isMaxOverride: boolean;
+} {
   if (modelId.endsWith("-manual")) {
-    return { wireId: modelId.slice(0, -"-manual".length), isManualOverride: true };
+    return {
+      wireId: modelId.slice(0, -"-manual".length),
+      isManualOverride: true,
+      isMaxOverride: false,
+    };
   }
-  return { wireId: modelId, isManualOverride: false };
+  if (modelId.endsWith("-max")) {
+    return {
+      wireId: modelId.slice(0, -"-max".length),
+      isManualOverride: false,
+      isMaxOverride: true,
+    };
+  }
+  return { wireId: modelId, isManualOverride: false, isMaxOverride: false };
 }
 
 export function anthropicModels(location: string): AnthropicVertexModel[] {
@@ -578,37 +605,33 @@ function mapStopReason(reason: string | null | undefined): StopReason {
 //
 // Effort levels per model (from the effort docs):
 //   - Opus 4.7:    low, medium, high, xhigh, max  (5 levels)
-//   - Opus 4.6:    low, medium, high, max         (4 levels, no xhigh)
-//   - Sonnet 4.6:  low, medium, high, max         (4 levels, no xhigh)
-//   - Haiku 4.5:   effort not supported on Vertex (the API rejects the
-//                  field entirely, both top-level and inside output_config).
-//                  Stays on the manual budget ladder.
+//   - Opus 4.6:    low, medium, high, max         (no xhigh)
+//   - Sonnet 4.6:  low, medium, high, max         (no xhigh)
+//   - Haiku 4.5:   effort not supported on Vertex; manual budget ladder
 //
-// Mapping pi's user-facing thinking level to wire shape:
+// Mapping pi level -> wire shape:
 //
-//   pi level  | Opus 4.7         | Opus 4.6 / Sonnet 4.6 | Haiku 4.5 (budget)
-//   ----------|------------------|------------------------|--------------------
-//   minimal   | effort `low`     | effort `low`           | 1024
-//   low       | effort `medium`  | effort `low`           | 4096
-//   medium    | effort `high`    | effort `medium`        | 10240
-//   high      | effort `xhigh`   | effort `high`          | 20480
-//   xhigh     | effort `max`     | effort `max`           | 32768
+//   pi level  | Opus 4.7 (bare)  | Opus 4.7 (-max)  | Opus 4.6 / Sonnet 4.6 | Haiku 4.5
+//   ----------|------------------|------------------|------------------------|----------
+//   minimal   | low              | low              | low                    | budget 1024
+//   low       | low              | low              | low                    | budget 4096
+//   medium    | medium           | medium           | medium                 | budget 10240
+//   high      | high             | high             | high                   | budget 20480
+//   xhigh     | xhigh            | max              | max                    | budget 32768
 //
-// Opus 4.7 "rounds everything up" by one effort tier so all 5 native
-// effort levels are reachable from pi's 5 user levels (minimal..xhigh).
-// This preserves `xhigh` — the docs' recommended starting point for
-// Opus 4.7 coding/agentic work — and exposes `max` via pi xhigh.
+// Bare `claude-opus-4-7` is name-faithful: pi xhigh -> Anthropic effort
+// xhigh (the docs' recommended starting point for coding/agentic work).
+// `max` is unreachable from this id by design.
 //
-// Opus 4.6 / Sonnet 4.6 keep low/medium/high name-faithful and only
-// remap pi xhigh -> max so users can reach the top tier. Pi minimal
-// collapses into effort low because these models only have 4 effort
-// levels for our 5 pi levels.
+// `claude-opus-4-7-max` is an opt-in variant that flips just the xhigh
+// cell to send Anthropic effort `max` ("no constraints on thinking
+// depth"). Same wire model id as the bare entry; the suffix is purely a
+// pi-side switch.
 //
-// Verified live on Vertex global endpoint that each effort string is
-// accepted with no 400 on its target model.
+// Opus 4.6 / Sonnet 4.6 have no xhigh effort tier, so their bare ids
+// already map pi xhigh -> max (no -max variant needed).
 //
-// We dispatch per model id below. If anyone reintroduces a model that
-// only supports manual, drop it from ADAPTIVE_THINKING_MODELS.
+// Verified live on Vertex global endpoint.
 
 // Exported for tests so a regression in this list fails the suite rather
 // than silently sending a 400 to Vertex on the next Opus 4.7 turn.
@@ -635,29 +658,35 @@ function reasoningToBudget(
 
 // Exported for tests so a regression in this mapping fails the suite
 // rather than silently sending an unsupported effort string and 400ing,
-// or shipping a less aggressive level than the user picked. See the
-// long comment block above for the per-model availability rule, the
-// rationale for the round-up on Opus 4.7, and citations.
+// or shipping a less aggressive level than the user picked. See the long
+// comment block above for the per-model availability rule and citations.
+//
+// `wireModelId` is the bare Vertex publisher id (no `-max`/`-manual`
+// suffix). `isMaxOverride` is true when the user picked the `-max`
+// variant on Opus 4.7 and means "map pi xhigh to effort max instead of
+// xhigh."
 export function reasoningToEffort(
   level: NonNullable<SimpleStreamOptions["reasoning"]>,
-  modelId: string,
+  wireModelId: string,
+  isMaxOverride = false,
 ): "low" | "medium" | "high" | "xhigh" | "max" {
-  // Opus 4.7: round everything up one tier so the full 5-effort range
-  // (low..max) is reachable from pi's 5 user levels (minimal..xhigh).
-  if (modelId.includes("opus-4-7")) {
+  // Opus 4.7: name-faithful by default. Only the -max variant flips
+  // pi xhigh from effort xhigh to effort max.
+  if (wireModelId.includes("opus-4-7")) {
     switch (level) {
-      case "minimal": return "low";
-      case "low":     return "medium";
-      case "medium":  return "high";
-      case "high":    return "xhigh";
-      case "xhigh":   return "max";
+      case "minimal":
+      case "low":     return "low";
+      case "medium":  return "medium";
+      case "high":    return "high";
+      case "xhigh":   return isMaxOverride ? "max" : "xhigh";
     }
   }
 
   // Opus 4.6 / Sonnet 4.6: name-faithful through high; pi xhigh is the
   // only way to reach effort `max` (these models lack `xhigh`). Pi
-  // minimal collapses with low.
-  if (modelId.includes("opus-4-6") || modelId.includes("sonnet-4-6")) {
+  // minimal collapses with low. (`isMaxOverride` is irrelevant: these
+  // models don't have a -max variant because xhigh already maps to max.)
+  if (wireModelId.includes("opus-4-6") || wireModelId.includes("sonnet-4-6")) {
     switch (level) {
       case "minimal":
       case "low":     return "low";
@@ -872,12 +901,15 @@ export function streamVertexAnthropic(
       projectId,
     };
 
-    // Strip the optional `-manual` suffix to recover the bare Vertex
-    // publisher model id. The suffix is a pi-side fiction that flips the
-    // thinking dispatch from adaptive (default on Opus 4.6 / Sonnet 4.6)
-    // to the manual `{ type: "enabled", budget_tokens }` shape; the same
-    // wire model id is sent to Vertex either way.
-    const { wireId: modelId, isManualOverride } = deriveWireModelId(model.id);
+    // Strip the optional `-manual` / `-max` suffix to recover the bare
+    // Vertex publisher model id. Both suffixes are pi-side fictions that
+    // flip per-model behaviour:
+    //   - `-manual`: use manual `{ type: "enabled", budget_tokens }`
+    //     instead of adaptive (only meaningful on Opus 4.6 / Sonnet 4.6).
+    //   - `-max`:    pi xhigh maps to Anthropic effort `max` instead of
+    //     effort `xhigh` (only meaningful on Opus 4.7).
+    // Same wire model id is sent to Vertex either way.
+    const { wireId: modelId, isManualOverride, isMaxOverride } = deriveWireModelId(model.id);
 
     // NB: We deliberately do *not* enable `fine-grained-tool-streaming-2025-05-14`.
     // That beta is what produces the malformed-JSON tool inputs reported in
@@ -915,19 +947,16 @@ export function streamVertexAnthropic(
     // Reasoning / thinking config. Temperature is incompatible with thinking,
     // so apply it only when thinking is off. The two-shape rule lives in
     // supportsAdaptiveThinking / reasoningToEffort / reasoningToBudget above
-    // (see the long comment block on `ADAPTIVE_THINKING_MODELS` for the
-    // citations). Opus 4.7 will 400 if we send manual config, so this
-    // dispatch is not optional.
+    // (see the long comment block on `ADAPTIVE_THINKING_MODELS`). Opus 4.7
+    // will 400 if we send manual config, so this dispatch is not optional.
     //
-    // The `-manual` suffix is the user's explicit opt-out from adaptive on
-    // models that support both modes (Opus 4.6, Sonnet 4.6). When set, we
-    // route through the manual branch even though the bare wire id would
-    // normally take adaptive.
+    // -manual forces the manual branch on models that support both shapes.
+    // -max changes only the xhigh effort mapping inside the adaptive branch.
     let thinkingEnabled = false;
     if (model.reasoning && options?.reasoning) {
       thinkingEnabled = true;
       if (!isManualOverride && supportsAdaptiveThinking(modelId)) {
-        const effort = reasoningToEffort(options.reasoning, modelId);
+        const effort = reasoningToEffort(options.reasoning, modelId, isMaxOverride);
         (baseParams as any).thinking = { type: "adaptive", display: "summarized" };
         (baseParams as any).output_config = { effort };
       } else {

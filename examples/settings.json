@@ -4,8 +4,11 @@
   "defaultThinkingLevel": "high",
   "enabledModels": [
     "vertex-anthropic/claude-opus-4-7",
+    "vertex-anthropic/claude-opus-4-7-max",
     "vertex-anthropic/claude-opus-4-6",
+    "vertex-anthropic/claude-opus-4-6-manual",
     "vertex-anthropic/claude-sonnet-4-6",
+    "vertex-anthropic/claude-sonnet-4-6-manual",
     "vertex-anthropic/claude-haiku-4-5"
   ],
   "compaction": {

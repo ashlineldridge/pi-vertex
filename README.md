@@ -68,15 +68,18 @@ project):
 ```
 
 `enabledModels` controls the list pi cycles through with `Ctrl+P`. The
-wildcard above picks up every model this extension exposes. To enumerate
-models explicitly:
+`vertex-anthropic/*` glob is the simplest setup and picks up every model
+this extension exposes (including the `-manual` and `-max` variants
+described below). To enumerate explicitly — for example to include only
+specific variants in the cycle:
 
 ```json
 {
   "enabledModels": [
     "vertex-anthropic/claude-opus-4-7",
-    "vertex-anthropic/claude-opus-4-6",
+    "vertex-anthropic/claude-opus-4-7-max",
     "vertex-anthropic/claude-sonnet-4-6",
+    "vertex-anthropic/claude-sonnet-4-6-manual",
     "vertex-anthropic/claude-haiku-4-5"
   ]
 }
@@ -105,14 +108,15 @@ expands thinking-block display.
 
 ## Models
 
-| Model ID                   | Context | Max output | Thinking mode |
-| -------------------------- | ------- | ---------- | ------------- |
-| `claude-opus-4-7`          | 1M      | 128K       | adaptive      |
-| `claude-opus-4-6`          | 1M      | 128K       | adaptive      |
-| `claude-opus-4-6-manual`   | 1M      | 128K       | manual budget |
-| `claude-sonnet-4-6`        | 1M      | 128K       | adaptive      |
-| `claude-sonnet-4-6-manual` | 1M      | 128K       | manual budget |
-| `claude-haiku-4-5`         | 200K    | 64K        | manual budget |
+| Model ID                   | Context | Max output | Thinking mode                 |
+| -------------------------- | ------- | ---------- | ----------------------------- |
+| `claude-opus-4-7`          | 1M      | 128K       | adaptive                      |
+| `claude-opus-4-7-max`      | 1M      | 128K       | adaptive (max effort variant) |
+| `claude-opus-4-6`          | 1M      | 128K       | adaptive                      |
+| `claude-opus-4-6-manual`   | 1M      | 128K       | manual budget (variant)       |
+| `claude-sonnet-4-6`        | 1M      | 128K       | adaptive                      |
+| `claude-sonnet-4-6-manual` | 1M      | 128K       | manual budget (variant)       |
+| `claude-haiku-4-5`         | 200K    | 64K        | manual budget                 |
 
 Context window and max output are taken from Vertex's per-model spec
 pages under
@@ -120,75 +124,59 @@ pages under
 
 ### Thinking modes
 
-Anthropic exposes two ways to control extended thinking, and Vertex
-forwards both. Newer models are moving toward adaptive as the primary
-mode; Opus 4.7 only accepts adaptive (manual returns a 400 error).
+Anthropic exposes two ways to control extended thinking on Vertex:
 
 - **Adaptive** (`{type: "adaptive"}` + an `effort` parameter): Claude
-  decides when and how much to think based on prompt complexity. The
-  `effort` parameter (`low`/`medium`/`high`/`xhigh`/`max`) is soft
-  guidance. This is what we send for the bare `claude-opus-4-7`,
-  `claude-opus-4-6`, and `claude-sonnet-4-6` ids.
-- **Manual budget** (`{type: "enabled", budget_tokens: N}`): you (or
-  pi-ai's defaults derived from the `--thinking` level) supply a fixed
-  thinking-token budget and Claude operates within it. This is what we
-  send for `claude-haiku-4-5` (which only supports manual) and for the
-  `-manual` variants of Opus 4.6 and Sonnet 4.6.
+  decides when and how much to think; effort is soft guidance. Required
+  on Opus 4.7; recommended on Opus 4.6 and Sonnet 4.6.
+- **Manual budget** (`{type: "enabled", budget_tokens: N}`): you supply
+  a fixed thinking-token budget. Required on Haiku 4.5; supported on
+  Opus 4.6 / Sonnet 4.6 (Opus 4.7 returns 400 if you try).
 
-The `-manual` variants exist for cases where you want a hard ceiling on
-thinking spend or reproducible per-turn token usage. They send the same
-wire model id to Vertex as their bare counterpart — the suffix is purely
-a pi-side switch that selects the manual `thinking` shape.
+#### Why the `-manual` and `-max` variants exist
+
+Both suffixes are pi-side switches that flip one specific per-model
+behaviour. The same wire model id is sent to Vertex either way — the
+suffix is stripped before the API call.
+
+- **`-manual`** (Opus 4.6, Sonnet 4.6): force the manual
+  `{ type: "enabled", budget_tokens }` shape instead of the default
+  adaptive. Pick this when you want a hard ceiling on thinking spend or
+  reproducible per-turn token usage. Not exposed for Opus 4.7 (manual
+  returns 400) or Haiku 4.5 (already manual).
+- **`-max`** (Opus 4.7 only): pi `xhigh` maps to Anthropic effort `max`
+  instead of effort `xhigh`. Pick this when you want "no constraints on
+  thinking depth." Bare `claude-opus-4-7` keeps `xhigh` reachable as the
+  recommended starting point for coding/agentic work; the `-max`
+  variant trades that for `max` access. Not needed on Opus 4.6 or
+  Sonnet 4.6: those models have no `xhigh` effort tier, so their bare
+  ids already map pi `xhigh → max`.
 
 #### Effort mapping
 
-pi's `--thinking <level>` is mapped per-model so the full native effort
-range each model supports is reachable, including `max`:
+pi's `--thinking <level>` maps per-model:
 
-| pi level | Opus 4.7 *(round up)* | Opus 4.6 / Sonnet 4.6 |
-| -------- | --------------------- | --------------------- |
-| `minimal`| effort `low`          | effort `low`          |
-| `low`    | effort `medium`       | effort `low`          |
-| `medium` | effort `high`         | effort `medium`       |
-| `high`   | effort `xhigh`        | effort `high`         |
-| `xhigh`  | effort `max`          | effort `max`          |
+| pi level | Opus 4.7 (bare) | Opus 4.7 (-max) | Opus 4.6 / Sonnet 4.6 | Haiku 4.5 (budget) |
+| -------- | --------------- | --------------- | --------------------- | ------------------ |
+| `minimal`| `low`           | `low`           | `low`                 | 1024               |
+| `low`    | `low`           | `low`           | `low`                 | 4096               |
+| `medium` | `medium`        | `medium`        | `medium`              | 10240              |
+| `high`   | `high`          | `high`          | `high`                | 20480              |
+| `xhigh`  | `xhigh`         | `max`           | `max`                 | 32768              |
 
-Opus 4.7 supports 5 effort levels (`low, medium, high, xhigh, max`) and
-the mapping rounds each pi level up by one tier so all five are
-reachable. Opus 4.6 and Sonnet 4.6 support 4 effort levels (no `xhigh`)
-and keep low/medium/high name-faithful, with pi `xhigh` remapped to
-`max` so the top tier is still reachable.
+The `-manual` variants of Opus 4.6 / Sonnet 4.6 use the same budget
+ladder as Haiku.
 
-For Haiku 4.5 (manual budget only), pi `--thinking` levels map to
-`budget_tokens` values: 1024 / 4096 / 10240 / 20480 / 32768 for
-minimal / low / medium / high / xhigh. The `-manual` variants of Opus
-4.6 and Sonnet 4.6 use the same budget ladder.
-
-#### Known limitation: pi-ai clamps `xhigh` away from some models
+#### Known limitation: `xhigh` is clamped on some models upstream
 
 pi-coding-agent uses pi-ai's [`supportsXhigh()`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/models.ts)
 to decide which thinking levels are available per model. As of
-pi-ai 0.68, that function only recognizes Opus 4.6, Opus 4.7, and the
-GPT-5.x families. **Sonnet 4.6 and Haiku 4.5 are NOT in the
-list**, so when you pick `--thinking xhigh` on those models, pi clamps
-to `xhigh → high` *before* this extension is called. Net effect:
-
-- `claude-sonnet-4-6` + `--thinking xhigh` → wire sends `effort: high`
-  instead of `max`.
-- `claude-haiku-4-5` + `--thinking xhigh` → wire sends
-  `budget_tokens: 20480` instead of 32768.
-- Same for `claude-sonnet-4-6-manual`.
-
-The extension's per-model mapping above is correct; the clamp happens
-upstream and we have no hook to override it. Fix is a one-line
-broadening of pi-ai's `supportsXhigh()` to include `sonnet-4-6` and
-`haiku-4-5`. Track [pi-mono](https://github.com/badlogic/pi-mono) for
-a pi-ai release that includes it.
-
-Workaround in the meantime: use the bare `claude-opus-4-7` or
-`claude-opus-4-6` if you specifically need `effort: max`, or set
-`thinkingBudgets` overrides in `~/.pi/agent/settings.json` if you want
-to bump Haiku's budget.
+pi-ai 0.68, Sonnet 4.6 and Haiku 4.5 are not in that list, so pi clamps
+`xhigh → high` *before* this extension is called. Net effect: the
+`xhigh` row above for Sonnet 4.6 and Haiku 4.5 currently behaves as
+if `--thinking high` had been specified. Opus 4.7 (both bare and `-max`)
+and Opus 4.6 are unaffected. Fix requires a pi-ai release that broadens
+`supportsXhigh()`.
 
 ### Cost
 

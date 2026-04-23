@@ -50,16 +50,19 @@ describe("model registry", () => {
   const models = anthropicModels("us-east5");
   const ids = models.map((m) => m.id);
 
-  it("exposes the expected Vertex Claude models plus -manual variants", () => {
+  it("exposes the expected Vertex Claude models plus -manual / -max variants", () => {
     // Bare ids: the four Vertex publisher models we ship.
-    // -manual ids: opt-in to manual `{ type: "enabled", budget_tokens }`
-    //              thinking on the two models that support both adaptive
-    //              and manual.
+    // -manual: opt-in to manual `{ type: "enabled", budget_tokens }` thinking
+    //          on Opus 4.6 and Sonnet 4.6 (manual not supported on Opus 4.7).
+    // -max:    opt-in to Anthropic effort `max` on Opus 4.7. The bare
+    //          `claude-opus-4-7` keeps name-faithful pi xhigh -> effort xhigh,
+    //          so this variant is the only path to effort max on 4.7.
     expect(ids.slice().sort()).toEqual([
       "claude-haiku-4-5",
       "claude-opus-4-6",
       "claude-opus-4-6-manual",
       "claude-opus-4-7",
+      "claude-opus-4-7-max",
       "claude-sonnet-4-6",
       "claude-sonnet-4-6-manual",
     ]);
@@ -68,10 +71,11 @@ describe("model registry", () => {
   it("matches the Vertex docs token limits per wire model", () => {
     // Cited from the per-model spec pages under
     // https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/<slug>.
-    // -manual variants share the wire model id (and therefore the same
-    // limits) with their bare counterpart.
+    // Variant ids share the wire model id (and therefore the same limits)
+    // with their bare counterpart.
     const expected: Record<string, { contextWindow: number; maxTokens: number }> = {
       "claude-opus-4-7": { contextWindow: 1_000_000, maxTokens: 128_000 },
+      "claude-opus-4-7-max": { contextWindow: 1_000_000, maxTokens: 128_000 },
       "claude-opus-4-6": { contextWindow: 1_000_000, maxTokens: 128_000 },
       "claude-opus-4-6-manual": { contextWindow: 1_000_000, maxTokens: 128_000 },
       "claude-sonnet-4-6": { contextWindow: 1_000_000, maxTokens: 128_000 },
@@ -112,32 +116,51 @@ describe("model registry", () => {
 });
 
 describe("deriveWireModelId", () => {
-  // The wire model id is what pi-vertex sends to Vertex. The `-manual`
-  // suffix is a pi-side fiction that flips thinking dispatch from adaptive
-  // to manual; both variants of a model share the same wire id.
+  // The wire model id is what pi-vertex sends to Vertex. The `-manual` and
+  // `-max` suffixes are pi-side fictions that flip per-model behaviour.
+  // All variants share the wire id of their bare counterpart.
 
-  it("strips the -manual suffix and reports the override", () => {
+  it("strips the -manual suffix and reports isManualOverride", () => {
     expect(deriveWireModelId("claude-opus-4-6-manual")).toEqual({
       wireId: "claude-opus-4-6",
       isManualOverride: true,
+      isMaxOverride: false,
     });
     expect(deriveWireModelId("claude-sonnet-4-6-manual")).toEqual({
       wireId: "claude-sonnet-4-6",
       isManualOverride: true,
+      isMaxOverride: false,
     });
   });
 
-  it("leaves bare ids unchanged and reports no override", () => {
+  it("strips the -max suffix and reports isMaxOverride", () => {
+    expect(deriveWireModelId("claude-opus-4-7-max")).toEqual({
+      wireId: "claude-opus-4-7",
+      isManualOverride: false,
+      isMaxOverride: true,
+    });
+  });
+
+  it("leaves bare ids unchanged and reports no overrides", () => {
     for (const id of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
-      expect(deriveWireModelId(id)).toEqual({ wireId: id, isManualOverride: false });
+      expect(deriveWireModelId(id)).toEqual({
+        wireId: id,
+        isManualOverride: false,
+        isMaxOverride: false,
+      });
     }
   });
 
-  it("doesn't strip an embedded `manual` substring", () => {
-    // Defensive: only the trailing `-manual` triggers stripping.
+  it("doesn't strip an embedded substring (only trailing -manual / -max)", () => {
     expect(deriveWireModelId("claude-manual-test")).toEqual({
       wireId: "claude-manual-test",
       isManualOverride: false,
+      isMaxOverride: false,
+    });
+    expect(deriveWireModelId("claude-max-test")).toEqual({
+      wireId: "claude-max-test",
+      isManualOverride: false,
+      isMaxOverride: false,
     });
   });
 });
@@ -214,10 +237,6 @@ describe("thinking-config dispatch rule", () => {
   //   - Opus 4.6:   adaptive recommended; manual still functional
   //   - Sonnet 4.6: adaptive recommended; manual still functional
   //   - Haiku 4.5:  manual only
-  //
-  // We pin the predicate the production code uses so a regression on
-  // ADAPTIVE_THINKING_MODELS fails this test instead of silently sending
-  // a 400 to Vertex on the next Opus 4.7 turn.
 
   it("dispatches adaptive for Opus 4.6 / 4.7 / Sonnet 4.6", () => {
     expect(supportsAdaptiveThinking("claude-opus-4-7")).toBe(true);
@@ -231,8 +250,8 @@ describe("thinking-config dispatch rule", () => {
 
   it("every shipped wire model has a thinking-shape decision", () => {
     // Sanity check: every wire-id in the registry must be classifiable.
-    // -manual variants share their wire id with their bare counterpart, so
-    // we test the wire ids rather than the registry ids directly.
+    // Variant ids share their wire id with their bare counterpart, so we
+    // test the wire ids rather than the registry ids directly.
     const wireIds = new Set(
       anthropicModels("us-east5").map((m) => deriveWireModelId(m.id).wireId),
     );
@@ -243,38 +262,46 @@ describe("thinking-config dispatch rule", () => {
 });
 
 describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () => {
-  // Per the effort docs (https://platform.claude.com/docs/en/build-with-claude/effort)
-  // and adaptive-thinking docs:
+  // Per https://platform.claude.com/docs/en/build-with-claude/effort:
   //
   //   Opus 4.7:   low, medium, high, xhigh, max  (5 levels)
   //   Opus 4.6:   low, medium, high, max         (no xhigh)
   //   Sonnet 4.6: low, medium, high, max         (no xhigh)
   //
-  // Mapping ships:
+  // Mapping (per-model dispatch + isMaxOverride flag for the -max variant):
   //
-  //   pi level | Opus 4.7   | Opus 4.6 / Sonnet 4.6
-  //   ---------|------------|-----------------------
-  //   minimal  | low        | low
-  //   low      | medium     | low
-  //   medium   | high       | medium
-  //   high     | xhigh      | high
-  //   xhigh    | max        | max
+  //   pi level | Opus 4.7 (bare) | Opus 4.7 (-max) | Opus 4.6 / Sonnet 4.6
+  //   ---------|-----------------|------------------|-----------------------
+  //   minimal  | low             | low              | low
+  //   low      | low             | low              | low
+  //   medium   | medium          | medium           | medium
+  //   high     | high            | high             | high
+  //   xhigh    | xhigh           | max              | max
   //
-  // Opus 4.7 "rounds up" so all 5 native efforts are reachable, including
-  // `xhigh` (the docs' recommended starting point for coding/agentic work)
-  // and `max`. Other adaptive models stay name-faithful through high and
-  // only remap pi xhigh -> max so users can still reach the top tier.
-  //
-  // Live-verified on Vertex global endpoint that every effort string in
-  // the table is accepted by its target model with no 400.
+  // Bare Opus 4.7 is name-faithful: pi xhigh -> Anthropic effort xhigh
+  // (the docs' recommended starting point for coding/agentic work).
+  // The `-max` variant is the only path to Anthropic effort `max` on
+  // Opus 4.7. Other adaptive models have no native `xhigh` tier so their
+  // bare ids already map pi xhigh -> max.
 
-  describe("Opus 4.7 (rounded up: 5 native efforts reachable)", () => {
+  describe("Opus 4.7 bare (name-faithful: pi xhigh -> effort xhigh)", () => {
     const M = "claude-opus-4-7";
     it("minimal -> low", () => expect(reasoningToEffort("minimal", M)).toBe("low"));
-    it("low     -> medium", () => expect(reasoningToEffort("low", M)).toBe("medium"));
-    it("medium  -> high", () => expect(reasoningToEffort("medium", M)).toBe("high"));
-    it("high    -> xhigh", () => expect(reasoningToEffort("high", M)).toBe("xhigh"));
-    it("xhigh   -> max", () => expect(reasoningToEffort("xhigh", M)).toBe("max"));
+    it("low     -> low", () => expect(reasoningToEffort("low", M)).toBe("low"));
+    it("medium  -> medium", () => expect(reasoningToEffort("medium", M)).toBe("medium"));
+    it("high    -> high", () => expect(reasoningToEffort("high", M)).toBe("high"));
+    it("xhigh   -> xhigh", () => expect(reasoningToEffort("xhigh", M)).toBe("xhigh"));
+  });
+
+  describe("Opus 4.7 -max variant (pi xhigh -> effort max)", () => {
+    // The streaming entry point passes isMaxOverride=true when the user
+    // picked the -max variant. wireModelId is the bare 'claude-opus-4-7'.
+    const M = "claude-opus-4-7";
+    it("minimal -> low", () => expect(reasoningToEffort("minimal", M, true)).toBe("low"));
+    it("low     -> low", () => expect(reasoningToEffort("low", M, true)).toBe("low"));
+    it("medium  -> medium", () => expect(reasoningToEffort("medium", M, true)).toBe("medium"));
+    it("high    -> high", () => expect(reasoningToEffort("high", M, true)).toBe("high"));
+    it("xhigh   -> max", () => expect(reasoningToEffort("xhigh", M, true)).toBe("max"));
   });
 
   describe("Opus 4.6 (no xhigh; name-faithful + xhigh->max)", () => {
@@ -307,50 +334,43 @@ describe("reasoningToEffort: pi thinking level -> Anthropic effort string", () =
     it("xhigh   -> high (clamped, defensive)", () => expect(reasoningToEffort("xhigh", M)).toBe("high"));
   });
 
-  describe("invariant: literal Anthropic 'xhigh' effort string is Opus-4.7-only", () => {
-    // Per https://platform.claude.com/docs/en/build-with-claude/effort, the
-    // `xhigh` effort string is only accepted by Opus 4.7. Sending it to any
-    // other model would 400. This test locks the invariant: a future change
-    // that accidentally routes a non-Opus-4.7 model to `xhigh` must fail
-    // here before it ships.
+  describe("invariant: literal 'xhigh' effort string only emitted via bare Opus 4.7", () => {
+    // Per the effort docs, the `xhigh` effort string is only accepted by
+    // Opus 4.7. Sending it to any other model would 400. Within Opus 4.7,
+    // the bare id emits xhigh on pi xhigh; the -max variant intentionally
+    // does NOT emit xhigh (it sends max instead). Locks the invariant.
 
-    it("never emits 'xhigh' for any non-Opus-4.7 model id", () => {
-      const nonOpus47 = [
+    it("never emits 'xhigh' for any non-Opus-4.7 wire model id", () => {
+      const nonOpus47Wire = [
         "claude-opus-4-6",
-        "claude-opus-4-6-manual",
         "claude-sonnet-4-6",
-        "claude-sonnet-4-6-manual",
         "claude-haiku-4-5",
         "claude-future-model-x",
       ];
-      for (const model of nonOpus47) {
+      for (const wireId of nonOpus47Wire) {
         for (const level of ["minimal", "low", "medium", "high", "xhigh"] as const) {
-          expect(
-            reasoningToEffort(level, model),
-            `reasoningToEffort("${level}", "${model}")`,
-          ).not.toBe("xhigh");
+          for (const isMax of [false, true]) {
+            expect(
+              reasoningToEffort(level, wireId, isMax),
+              `reasoningToEffort("${level}", "${wireId}", ${isMax})`,
+            ).not.toBe("xhigh");
+          }
         }
       }
     });
 
-    it("emits 'xhigh' for exactly one (model, pi-level) pair: Opus 4.7 + pi 'high'", () => {
-      const allModels = [
-        "claude-opus-4-7",
-        "claude-opus-4-6",
-        "claude-opus-4-6-manual",
-        "claude-sonnet-4-6",
-        "claude-sonnet-4-6-manual",
-        "claude-haiku-4-5",
-      ];
-      const cellsThatEmitXhigh: Array<[string, string]> = [];
-      for (const model of allModels) {
+    it("emits 'xhigh' for exactly one cell: bare Opus 4.7 (isMaxOverride=false) + pi 'xhigh'", () => {
+      const cells: Array<[string, string, boolean]> = [];
+      for (const wireId of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
         for (const level of ["minimal", "low", "medium", "high", "xhigh"] as const) {
-          if (reasoningToEffort(level, model) === "xhigh") {
-            cellsThatEmitXhigh.push([model, level]);
+          for (const isMax of [false, true]) {
+            if (reasoningToEffort(level, wireId, isMax) === "xhigh") {
+              cells.push([wireId, level, isMax]);
+            }
           }
         }
       }
-      expect(cellsThatEmitXhigh).toEqual([["claude-opus-4-7", "high"]]);
+      expect(cells).toEqual([["claude-opus-4-7", "xhigh", false]]);
     });
   });
 });
